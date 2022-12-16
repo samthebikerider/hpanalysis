@@ -1,7 +1,5 @@
 # Clear Global Environment
-rm(list=ls()) # comment 2
-
-# sr comment
+rm(list=ls())
 
 # Open libraries
 library(tidyverse)
@@ -89,13 +87,14 @@ data$supply_flow_rate_CFM <- fan_power_curve(data$Fan_Power, data$Site_ID)
 
   # Operating mode
     # Need to ask Michaels how to calculate this field
-    # Looks like the voltage is normal around 0V or 3.0V, so I'm guessing 3.0V 
-    # means heating mode, but there is still power in the HP at 0V, so does that mean
-    # it's in cooling mode?
+    # Looks like the voltage is normal around 0V or 3.0V, so I'm guessing one 
+    # means heating mode and the other is cooling, but not clear. Setting only 
+    # to heating for now.
 # plot(x=data$RV_Volts, y=data$HP_Power)
+# plot(x=data$RV_Volts, y=data$SA_TempF)
 data <- data %>% mutate(
-  Operating_Mode = ifelse(RV_Volts > 2.7, "Heating",
-                          ifelse(RV_Volts < 0.1, "Cooling",
+  Operating_Mode = ifelse(RV_Volts > -1, "Heating",
+                          ifelse(RV_Volts > -1, "Cooling",
                                  "None")))
 
   # Auxiliary power
@@ -109,8 +108,8 @@ data <- data %>% mutate(
 data <- data %>% mutate(
   Heating_Capacity_Btu_h = ifelse(
   Operating_Mode == "Cooling", NA,
-    2.8118 *                                                # Density of air (lb/m3)
-    supply_flow_rate_CFM * 0.0283168 * 60 *                 # CFM * m3/ft3 * min/hour
+    0.0765 *                                                # Density of air at 15C (lb/ft3)
+    supply_flow_rate_CFM * 60 *                             # CFM * min/hour
     (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
     (SA_TempF - RA_TempF)) -                                # Temperature delta
   Aux_Power * 3.412)                                        # Subtract auxiliary power, convert Watts to btu/hr
@@ -128,8 +127,8 @@ data <- data %>% mutate(
 data <- data %>% mutate(
   Cooling_Capacity_Btu_h = ifelse(
   Operating_Mode == "Heating", NA,
-    2.8118 *                                                          # Density of air (lb/m3)
-    supply_flow_rate_CFM * 0.0283168 * 60 *                           # CFM * m3/ft3 * min/hour
+    0.0765 *                                                          # Density of air at 15C (lb/ft3)
+    supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
     (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
     (SA_TempF - RA_TempF) /
     (1 + Supply_Humidity_Ratio)))
@@ -153,7 +152,6 @@ data <- data %>% mutate(
   3.412 / (AHU_Power + HP_Power))
 
 # COP cooling
-  # VM: corrected to drop supplement_heat_power term from denominator
 data <- data %>% mutate(
   COP_Cooling = (-1 * Cooling_Capacity_Btu_h) / 
   3.412 / (AHU_Power + HP_Power))
@@ -187,8 +185,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
     geom_hline(aes(yintercept = 0)) +
     labs(title="Time series plot",x="Timestamp",y=parameter, color="Site ID") +
     theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank()) +
+          panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 
@@ -295,11 +292,12 @@ PowerTimeSeries("6950NE", 5, "12/01/2022", "12/31/2022")
   # Round to nearest 1 degree F (may want to consider larger intervals)
   # Only can select one site for this function
 HeatCapacity <- function(site, timestart, timeend){
-  testdata %>%
+  data %>%
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
-    group_by(temp_int = round(Outdoor_Drybulb_Temperature_F)) %>% 
+    group_by(temp_int = round(OA_TempF)) %>% 
+    filter(!is.na(temp_int)) %>%
     summarize(Heating_Capacity = mean(Heating_Capacity_Btu_h, na.rm=T),
               Heating_Load = mean(Heating_Load_Btu_h, na.rm=T)) %>%
     ggplot(aes(x = temp_int)) + 
@@ -311,12 +309,13 @@ HeatCapacity <- function(site, timestart, timeend){
     labs(title="Heating Capacity/Heating Load vs. Outdoor Air Temperature",
          x="Outdoor Temperature (F)",
          y="Load and Capcity (Btu/h)") +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),
+    theme(panel.border = element_rect(colour = "black",fill=NA),
           legend.title = element_blank())
 }
-HeatCapacity(1, "12/15/2022", "12/30/2022")
+HeatCapacity("6950NE", "12/01/2022", "12/30/2022")
+
+
+
 
 # COP vs outdoor air temperature, hourly averages
   # The powerpoint has this grouped by stage (low, medium, high) as well.
