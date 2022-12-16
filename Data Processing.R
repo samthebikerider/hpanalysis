@@ -261,6 +261,8 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
   # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
   # The time start and end should be a date string in format for example "4/01/2022".
+  # Scale for the secondary axis may need to be adjusted manually, and will get more
+  # complicated once we have outdoor values.
   data %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
@@ -322,11 +324,11 @@ HeatCapacity("6950NE", "12/01/2022", "12/30/2022")
   # I'm not sure how we will get the stage of operation.
       # VM: These should all be continously varying units, so we shouldn't have to worry about stages.
 COP <- function(site, timestart, timeend){
-  testdata %>%     
+  data %>%     
     filter(Site_ID %in% site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
-    group_by(Site_ID, temp_int = round(Outdoor_Drybulb_Temperature_F)) %>% 
+    group_by(Site_ID, temp_int = round(OA_TempF)) %>% 
     summarize(COP = mean(COP_Heating, na.rm=T)) %>%
   ggplot(aes(x = temp_int, y = COP, color = as.character(Site_ID))) + 
     geom_line(size = 1) +
@@ -336,10 +338,9 @@ COP <- function(site, timestart, timeend){
          y="COP",
          color = "Site") +
     theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank())
+          panel.border = element_rect(colour = "black",fill=NA))
 }
-COP(1, "12/15/2022", "12/30/2022")
+COP("6950NE", "12/01/2022", "12/30/2022")
 
 
 ## Need to figure out how to do staging charts and defrost mode run time chart
@@ -349,13 +350,13 @@ COP(1, "12/15/2022", "12/30/2022")
 # Supplemental resistance heat use compared to total energy use by temperature bin
   # Using 5 degree F intervals like the graph in the powerpoint
 SuppHeatUse <- function(site, timestart, timeend){
-  testdata %>%     
+  data %>%     
     filter(Site_ID %in% site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
-    group_by(Site_ID, temp_int = cut(Outdoor_Drybulb_Temperature_F,
+    group_by(Site_ID, temp_int = cut(OA_TempF,
                                      breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45))) %>% 
-    summarize(SuppHeat = mean(Supplement_Heat_Power_kW * 100 / (System_Power_kW + Supplement_Heat_Power_kW), na.rm=T)) %>%
+    summarize(SuppHeat = mean(Aux_Power / (AHU_Power + HP_Power), na.rm=T)) %>%
     filter(!is.na(temp_int)) %>%
     ggplot(aes(x = temp_int, y = SuppHeat, color = as.character(Site_ID), group = Site_ID)) + 
     geom_line(size = 1) +
@@ -365,26 +366,24 @@ SuppHeatUse <- function(site, timestart, timeend){
          y="Ratio of Supplemental Heat to Total Heat Energy (%)",
          color = "Site") +
     theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank())
+          panel.border = element_rect(colour = "black",fill=NA))
   
 }
-SuppHeatUse(1, "12/15/2022", "12/30/2022")
+SuppHeatUse("6950NE", "12/01/2022", "12/30/2022")
 
 
 # Heat pump return and supply temperature for outdoor temperature bins
   # Only one site can be entered at a time
   # I assume we want to filter out when supplemental heat is on, so added a filter for that
 SupplyReturnTemp <- function(site, timestart, timeend){
-  testdata %>%     
+  data %>%     
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y") &
-             Supplement_Heat_Power_kW == 0) %>%
-    group_by(temp_int = cut(Outdoor_Drybulb_Temperature_F,
-                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45))) %>% 
-    summarize(SupplyTemp = mean(Supply_Temperature_F, na.rm=T),
-              ReturnTemp = mean(Return_Temperature_F, na.rm=T)) %>%
+             Aux_Power == 0) %>%
+    group_by(temp_int = cut(OA_TempF, breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45))) %>% 
+    summarize(SupplyTemp = mean(SA_TempF, na.rm=T),
+              ReturnTemp = mean(RA_TempF, na.rm=T)) %>%
     filter(!is.na(temp_int)) %>%
     ggplot(aes(x = temp_int)) + 
     geom_line(size = 1, aes(y = SupplyTemp, color="Supply Temperature", group=1)) +
@@ -397,11 +396,10 @@ SupplyReturnTemp <- function(site, timestart, timeend){
          y="Indoor Temperature (F)") +
     theme(axis.ticks.y=element_blank(),
           panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),
           legend.title = element_blank())
   
 }
-SupplyReturnTemp(1, "12/15/2022", "12/30/2022")
+SupplyReturnTemp("6950NE", "12/01/2022", "12/30/2022")
 
 
 ## Skipping the cooling mode graphs for now, not a priority
@@ -415,13 +413,13 @@ SupplyReturnTemp(1, "12/15/2022", "12/30/2022")
   # I did heat pump + supplemental power, I think that makes more sense than just heat pump power
   # Need to think about how to convert kW to kWh when there could be missing data or uneven time intervals
 ElecUsage <- function(site, timestart, timeend){
-  tempdf <- testdata %>%     
+  tempdf <- data %>%     
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
     group_by(date) %>% 
-    summarize(AirTemp = mean(Outdoor_Drybulb_Temperature_F, na.rm=T),
-              ElecUse = mean(System_Power_kW + Supplement_Heat_Power_kW, na.rm=T))
+    summarize(AirTemp = mean(OA_TempF, na.rm=T),
+              ElecUse = mean(AHU_Power + HP_Power, na.rm=T))
   
   # Create transformation factor for secondary axis
     # Complicated because there can be positive and negative values for temp
@@ -436,16 +434,15 @@ ElecUsage <- function(site, timestart, timeend){
     geom_point(size=2, aes(y = AirTemp), color="red") +
     scale_color_manual(values=c("red","black")) +
     scale_y_continuous(name = "Outdoor Temperature (F)",
-                       sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (kW)")) +
+                       sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (W)")) +
     labs(title="Electricity Usage vs Outdoor Temperature",
          x="") +
     theme(axis.ticks.y=element_blank(),
           panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),
           legend.title = element_blank())
   
 }
-ElecUsage(1, "12/15/2022", "12/30/2022")
+ElecUsage("6950NE", "12/01/2022", "12/30/2022")
 
 
 
