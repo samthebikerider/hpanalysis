@@ -1,5 +1,5 @@
 # Clear Global Environment
-rm(list=ls())
+rm(list=ls()) # comment
 
 # Open libraries
 library(tidyverse)
