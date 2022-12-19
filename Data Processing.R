@@ -75,7 +75,7 @@ data <- data %>% mutate(
 
   # Air supply (based on fan power curve)
 fan_power_curve <- function(fan_power, siteid){
-  # Correlate fan power to volumetric flow rate based on initial testing
+  # Correlate fan power (kW) to volumetric flow rate (CFM) based on initial testing
   # Function will output the air supply in CFM for an input power in Watts
   # We will need to add a line for each site in this function.
   supply_flow_rate_CFM = ifelse(siteid=="6950NE",
@@ -112,14 +112,14 @@ data <- data %>% mutate(
     supply_flow_rate_CFM * 60 *                             # CFM * min/hour
     (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
     (SA_TempF - RA_TempF)) -                                # Temperature delta
-  Aux_Power * 3.412)                                        # Subtract auxiliary power, convert Watts to btu/hr
+  Aux_Power * 3412)                                        # Subtract auxiliary power, convert kW to btu/hr
 
   # Heating load
     # VM: Heating load might be a misnomer here because this does not incorporate the COP. 
 data <- data %>% mutate(
   Heating_Load_Btu_h = ifelse(
   Operating_Mode == "Cooling", NA,
-  (AHU_Power + HP_Power) * 3.412))               # Convert total system power to Btu/hr
+  (AHU_Power + HP_Power) * 3412))               # Convert total system power from kW to Btu/hr
 
   # Cooling capacity (Q-cooling)
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
@@ -137,7 +137,7 @@ data <- data %>% mutate(
 data <- data %>% mutate(
   Cooling_Load_Btu_h = ifelse(
     Operating_Mode == "Heating", NA,
-    (AHU_Power + HP_Power) * 3.412))                                   # Convert total system power to Btu/hr
+    (AHU_Power + HP_Power) * 3412))                                   # Convert total system power from kW to Btu/hr
 
 
   # COP heating
@@ -149,12 +149,12 @@ data <- data %>% mutate(
     # we wouldn't have results.
 data <- data %>% mutate(
   COP_Heating = Heating_Capacity_Btu_h / 
-  3.412 / (AHU_Power + HP_Power))
+  3412 / (AHU_Power + HP_Power))
 
 # COP cooling
 data <- data %>% mutate(
   COP_Cooling = (-1 * Cooling_Capacity_Btu_h) / 
-  3.412 / (AHU_Power + HP_Power))
+  3412 / (AHU_Power + HP_Power))
 
 
 
@@ -278,7 +278,7 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
     geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
     geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) + 
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
-    scale_y_continuous(name = "Power (W)",
+    scale_y_continuous(name = "Power (kW)",
                        sec.axis = sec_axis(~.*3, name ="Outdoor Air Temperature (F)")) +
     scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
     labs(title=paste0("Power time series plot for site ", site),x="") +
@@ -434,7 +434,7 @@ ElecUsage <- function(site, timestart, timeend){
     geom_point(size=2, aes(y = AirTemp), color="red") +
     scale_color_manual(values=c("red","black")) +
     scale_y_continuous(name = "Outdoor Temperature (F)",
-                       sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (W)")) +
+                       sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (kW)")) +
     labs(title="Electricity Usage vs Outdoor Temperature",
          x="") +
     theme(axis.ticks.y=element_blank(),
