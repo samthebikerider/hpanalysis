@@ -10,6 +10,7 @@ library(stringr)
   # As a string variable to make it easier to change to folders within directory
 wd <- "C:/Users/keen930/PNNL/CCHP - General/Field Demonstration (Task 2)/R Data Analysis"
 wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/General/Field Demonstration (Task 2)/R Data Analysis"
+
 # Read data
 # read_plus <- function(file) {read_csv(file) %>% mutate(filename=file)}
 # df <- list.files(path = paste0(wd, "/Raw Data"),pattern="*.csv", full.names=T) %>% 
@@ -44,7 +45,7 @@ for (id in metadata$Site_ID){
   sub$Timestamp = sub$index %>% with_tz(tzone = metadata$Timezone[metadata$Site_ID==id])
   temp <- rbind(temp, sub)
 }
-df <- temp
+df <- temp %>% arrange(Site_ID, Timestamp)
 rm(temp, sub, id)
 
 # Add fields for date, hour, and week day
@@ -130,23 +131,25 @@ df <- df %>% mutate(
     # since the last power reading.
     # This assumes that if there is missing data, the eGauge will report the first
     # point after a gap as the average of the gap.
-df  <- df %>% mutate(Energy_Use_kWH = NA)
-temp <- df[0,] 
-for(id in metadata$Site_ID){
-  sub <- df %>% filter(Site_ID == id) %>% arrange(Timestamp)
-  index <- which(!is.na(sub$Total_Power))[1] + 1 # Second non-NA row
-  ts <- sub$Timestamp[index]                     # Timestamp at first non-NA row
+    # Important that the data is sorted by site id and then timestamp, which it 
+    # should be from previous code "arrange".
 
-  for(row in index:nrow(sub)){
-    if(!is.na(sub$Total_Power[row])){              # If the power is not NA, calculate energy from last timestep
-      sub$Energy_Use_kWH[row] = sub$Total_Power[row] * difftime(sub$Timestamp[row], ts, units="hours")
-      ts <- sub$Timestamp[row]
+energyCalc <- function(site, timestamp, power){
+  
+  index <- which(!is.na(power))[1] + 1    # Second non-NA row
+  ts <- timestamp[index]                  # Timestamp at first non-NA row
+  energy <- rep(NA, length(site))         # Initialize vector for energy
+  
+  for(row in index:length(site)){
+    if(!is.na(power[row])){              # If the power is not NA, calculate energy from last time step
+      energy[row] = power[row] * difftime(timestamp[row], ts, units="hours")
+      ts <- timestamp[row]
     }
   }
-  temp <- rbind(temp, sub)
+  energy    # Return energy vector as output
 }
-df <- temp
-rm(temp, sub, id, row, index, ts)
+
+df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$Total_Power)
 
   # Heating capacity (Q-heating)
     # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
