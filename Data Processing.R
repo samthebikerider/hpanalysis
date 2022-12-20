@@ -339,7 +339,7 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
     group_by(Site_ID,date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
               HP_Power = mean(HP_Power,na.rm=T),
-              Fan_Power = mean(Fan_Power,na.rm=T),
+              Fan_Power = mean(Fan_Power*10,na.rm=T),
               Aux_Power = mean(Aux_Power,na.rm=T),
               Total_Power = mean(Total_Power, na.rm=T),
               OA_TempF = mean(OA_TempF,na.rm=T)) %>%
@@ -362,7 +362,7 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-PowerTimeSeries("6950NE", 5, "12/01/2022", "12/31/2022")
+PowerTimeSeries("8220XE", 5, "12/17/2022", "12/19/2022")
 
 
 # Heating capacity (Btu/h) vs outdoor air temperature
@@ -536,6 +536,13 @@ ElecUsage <- function(site, timestart, timeend){
   
 }
 ElecUsage("6950NE", "12/01/2022", "12/30/2022")
+
+
+
+
+# Add graph for % of time per hour heat pump and aux heat are running
+df %>% filter(Site_ID == "8220XE" & Date == strptime("12/15/2022","%m/%d/%Y"))
+
 
 
 ## Loop through all graphs and print for each site
