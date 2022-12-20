@@ -275,9 +275,13 @@ TempTimeSeries <- function(site, interval, timestart, timeend){
     scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0, 200, by=1)) +
     scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
     labs(title=paste0("Temperature time series plot for site ", site),x="",y="Temperature (F)") +
+    theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1)) +
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 TempTimeSeries("6950NE", 5, "12/01/2022", "12/31/2022")
@@ -305,9 +309,13 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
     scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0,200, by=1)) +
     scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
     labs(title=paste0("Supply temperature time series plot for site ", site),x="",y="Temperature (F)") +
+    theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1)) +
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 SupplyTempTimeSeries("6950NE", 5, "12/01/2022", "12/31/2022")
@@ -341,9 +349,13 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
                        sec.axis = sec_axis(~.*3, name ="Outdoor Air Temperature (F)")) +
     scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
     labs(title=paste0("Power time series plot for site ", site),x="") +
+    theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1)) +
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 PowerTimeSeries("6950NE", 5, "12/01/2022", "12/31/2022")
@@ -370,8 +382,12 @@ HeatCapacity <- function(site, timestart, timeend){
     labs(title="Heating Capacity/Heating Load vs. Outdoor Air Temperature",
          x="Outdoor Temperature (F)",
          y="Load and Capcity (Btu/h)") +
+    theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank())
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
 }
 HeatCapacity("6950NE", "12/01/2022", "12/30/2022")
 
@@ -396,8 +412,12 @@ COP <- function(site, timestart, timeend){
          x="Outdoor Temperature (F)",
          y="COP",
          color = "Site") +
+    theme_bw() +
     theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA))
+          panel.border = element_rect(colour = "black",fill=NA),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
 }
 COP("6950NE", "12/01/2022", "12/30/2022")
 
@@ -424,8 +444,12 @@ AuxHeatUse <- function(site, timestart, timeend){
          x="Outdoor Temperature (F)",
          y="Ratio of Supplemental Heat to Total Heat Energy (%)",
          color = "Site") +
+    theme_bw() +
     theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA))
+          panel.border = element_rect(colour = "black",fill=NA),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
   
 }
 AuxHeatUse("6950NE", "12/01/2022", "12/30/2022")
@@ -453,9 +477,13 @@ SupplyReturnTemp <- function(site, timestart, timeend){
     labs(title="Supply and Return Temperature per Outdoor Temperature Bin",
          x="Outdoor Temperature Bin (F)",
          y="Indoor Temperature (F)") +
+    theme_bw() +
     theme(axis.ticks.y=element_blank(),
           panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank())
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
   
 }
 SupplyReturnTemp("6950NE", "12/01/2022", "12/30/2022")
@@ -494,9 +522,13 @@ ElecUsage <- function(site, timestart, timeend){
                        sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (kW)")) +
     labs(title="Electricity Usage vs Outdoor Temperature",
          x="") +
+    theme_bw() +
     theme(axis.ticks.y=element_blank(),
           panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank())
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
   
 }
 ElecUsage("6950NE", "12/01/2022", "12/30/2022")
