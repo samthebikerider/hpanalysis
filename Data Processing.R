@@ -7,12 +7,16 @@ library(lubridate)
 library(stringr)
 
 # Set working library
-setwd('C:/Users/keen930/PNNL/CCHP - General/Field Demonstration (Task 2)/R Data Analysis')
+  # As a string variable to make it easier to change to folders within directory
+wd <- "C:/Users/keen930/PNNL/CCHP - General/Field Demonstration (Task 2)/R Data Analysis"
 
 # Read data
   # Will need to read multiple files from weekly data dumps and bind
-data <- read.csv('PNNL_ccASHP__6950NE.csv')
-metadata <- read.csv('site-metadata.csv')
+read_plus <- function(file) {read_csv(file) %>% mutate(filename=file)}
+data <- list.files(path = paste0(wd, "/Raw Data"),pattern="*.csv", full.names=T) %>% 
+  map_df(~read_plus(.))
+
+metadata <- read.csv(file = paste0(wd, "/site-metadata.csv"))
 
 
 # Convert timestamp from UTC to local time zone
