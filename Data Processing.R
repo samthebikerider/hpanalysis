@@ -11,12 +11,22 @@ library(stringr)
 wd <- "C:/Users/keen930/PNNL/CCHP - General/Field Demonstration (Task 2)/R Data Analysis"
 
 # Read data
-  # Will need to read multiple files from weekly data dumps and bind
-read_plus <- function(file) {read_csv(file) %>% mutate(filename=file)}
-data <- list.files(path = paste0(wd, "/Raw Data"),pattern="*.csv", full.names=T) %>% 
-  map_df(~read_plus(.))
+# read_plus <- function(file) {read_csv(file) %>% mutate(filename=file)}
+# df <- list.files(path = paste0(wd, "/Raw Data"),pattern="*.csv", full.names=T) %>% 
+  # map_df(~read_csv(.))
 
-metadata <- read.csv(file = paste0(wd, "/site-metadata.csv"))
+  # Read_csv (tidyverse) is crashing RStudio, trying fread (data.table) which is supposed to be better with large files
+library(data.table)
+read_plus <- function(file) {fread(file) %>% mutate(filename=file)}
+df <- list.files(path = paste0(wd, "/Raw Data"),pattern="*.csv", full.names=T) %>% 
+  map_df(~read_plus(.)) %>% 
+  # Modify filename so that it is the Site ID
+  mutate(Site_ID = substr(filename, nchar(filename)-13,nchar(filename)-8)) %>%
+  as.data.frame()
+
+
+
+metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 
 
 # Convert timestamp from UTC to local time zone
@@ -26,17 +36,19 @@ metadata <- read.csv(file = paste0(wd, "/site-metadata.csv"))
   # for each site.
   # I tried to do this without creating so many temporary variables, but the "tz"
   # variable in strptime doesn't let me do dynamic inputs with multiple sites in one df
-temp <- data[0,]
+  # KK: It looks like data.table automatically converted the timestamp to POSIXct, so just need to change TZ now
+temp <- df[0,] %>% mutate(Timestamp = NA)
 for (id in metadata$Site_ID){
-  sub <- data %>% filter(Site_ID == id)
-  sub$Timestamp = strptime(substr(sub$index,1,19), tz=metadata$Timezone[metadata$Site_ID==id],"%Y-%m-%d %H:%M:%S")
+  sub <- df %>% filter(Site_ID == id)
+  # sub$Timestamp = strptime(substr(sub$index,1,19), tz=metadata$Timezone[metadata$Site_ID==id],"%Y-%m-%d %H:%M:%S")
+  sub$Timestamp = sub$index %>% with_tz(tzone = metadata$Timezone[metadata$Site_ID==id])
   temp <- rbind(temp, sub)
 }
-data <- temp
+df <- temp
 rm(temp, sub, id)
 
 # Add fields for date, hour, and week day
-data <- data %>% mutate(
+df <- df %>% mutate(
   date = date(Timestamp),
   hour = hour(Timestamp),
   day = wday(Timestamp))
@@ -53,7 +65,7 @@ data <- data %>% mutate(
   # We can look at these charts to determine acceptable ranges etc.
 
   # Supply temperature and humidity calculated as the average of the four quadrants
-data <- data %>% mutate(
+df <- df %>% mutate(
   SA_RH = rowMeans(cbind(SA1_RH, SA2_RH, SA3_RH, SA4_RH)),
   SA_TempF = rowMeans(cbind(SA1_TempF, SA2_TempF, SA3_TempF, SA4_TempF)))
 
@@ -63,7 +75,7 @@ data <- data %>% mutate(
     # P = 97,717 Pascals at 1,000 ft elevation (we could use a more accurate look up for each location)
     # Pw = RH * Pws; Pws = f(T); T in Fahrenheit, based on curve fit
     # 6th order poly fit: Pws = -0.000000001546*T^6 + 0.000000516256*T^5 - 0.000020306966*T^4 + 0.002266035021*T^3 + 0.190010315225*T^2 + 6.715900713408*T + 125.349159019000
-data <- data %>% mutate(
+df <- df %>% mutate(
       Partial_Water_Pressure_Supply = SA_RH / 100 * 
             (-0.000000001546*SA_TempF^6 + 
              0.000000516256*SA_TempF^5 - 
@@ -84,43 +96,60 @@ fan_power_curve <- function(fan_power, siteid){
   # We will need to add a line for each site in this function.
   supply_flow_rate_CFM = ifelse(siteid=="6950NE",
                       152.27 * fan_power ^ 0.3812,
-                      NA)
+                      ifelse(siteid=="8220XE",
+                             152.27 * fan_power ^ 0.3812,  # This one needs to be updated
+                             NA))
 }
-data$supply_flow_rate_CFM <- fan_power_curve(data$Fan_Power, data$Site_ID)
+df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
 
   # Operating mode
     # Need to ask Michaels how to calculate this field
-    # Looks like the voltage is normal around 0V or 3.0V, so I'm guessing one 
+    # Looks like the voltage is normal around 0V or 2.7V, so I'm guessing one 
     # means heating mode and the other is cooling, but not clear. Setting only 
     # to heating for now.
-# plot(x=data$RV_Volts, y=data$HP_Power)
-# plot(x=data$RV_Volts, y=data$SA_TempF)
-data <- data %>% mutate(
+    # Also need to consider in following equations how to treat operating mode
+    # when the system is turned off... should be in the mode that it was just before
+    # turning off I would think.
+# plot(x=df$RV_Volts, y=df$HP_Power)
+# plot(x=df$RV_Volts, y=df$SA_TempF)
+df <- df %>% mutate(
   Operating_Mode = ifelse(RV_Volts > -1, "Heating",
                           ifelse(RV_Volts > -1, "Cooling",
                                  "None")))
 
   # Auxiliary power
     # Is it just "Power" or the sum of "Power" and "Power."?
-data <- data %>% mutate(
+df <- df %>% mutate(
   Aux_Power = Aux1_Power + Aux2_Power + Aux3_Power + Aux4_Power)
+
+
+  # Energy use
+    # Calculate energy use at each timestamp as the power multiplied by the interval
+    # since the last power reading.
+    # This assumes that if there is missing data, the eGauge will report the first
+    # point after a gap as the average of the gap.
+temp <- df[0,] %>% mutate(Energy_Use_kWH = NA)
+for(id in metadata$Site_ID){
+  sub <- df %>% filter(Site_ID == id) %>% arrange(Timestamp)
+  
+}
 
 
   # Heating capacity (Q-heating)
     # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
-data <- data %>% mutate(
+df <- df %>% mutate(
   Heating_Capacity_Btu_h = ifelse(
   Operating_Mode == "Cooling", NA,
     0.0765 *                                                # Density of air at 15C (lb/ft3)
     supply_flow_rate_CFM * 60 *                             # CFM * min/hour
     (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
     (SA_TempF - RA_TempF)) -                                # Temperature delta
-  Aux_Power * 3412)                                        # Subtract auxiliary power, convert kW to btu/hr
+  Aux_Power * 3412)                                         # Subtract auxiliary power, convert kW to btu/hr
 
   # Heating load
     # VM: Heating load might be a misnomer here because this does not incorporate the COP. 
-data <- data %>% mutate(
+df <- df %>% mutate(
   Heating_Load_Btu_h = ifelse(
   Operating_Mode == "Cooling", NA,
   (AHU_Power + HP_Power) * 3412))               # Convert total system power from kW to Btu/hr
@@ -128,7 +157,7 @@ data <- data %>% mutate(
   # Cooling capacity (Q-cooling)
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
         # VM: This will yield -ve values which is what we want here but something to bear in mind during COP calcs.
-data <- data %>% mutate(
+df <- df %>% mutate(
   Cooling_Capacity_Btu_h = ifelse(
   Operating_Mode == "Heating", NA,
     0.0765 *                                                          # Density of air at 15C (lb/ft3)
@@ -138,7 +167,7 @@ data <- data %>% mutate(
     (1 + Supply_Humidity_Ratio)))
 
 # Cooling load
-data <- data %>% mutate(
+df <- df %>% mutate(
   Cooling_Load_Btu_h = ifelse(
     Operating_Mode == "Heating", NA,
     (AHU_Power + HP_Power) * 3412))                                   # Convert total system power from kW to Btu/hr
@@ -151,12 +180,12 @@ data <- data %>% mutate(
     # KK: To calculate COP of just heat pump we would need to remove all data where the
     # auxiliary heat is operating, and so there might be some temperature bins where
     # we wouldn't have results.
-data <- data %>% mutate(
+df <- df %>% mutate(
   COP_Heating = Heating_Capacity_Btu_h / 
   3412 / (AHU_Power + HP_Power))
 
 # COP cooling
-data <- data %>% mutate(
+df <- df %>% mutate(
   COP_Cooling = (-1 * Cooling_Capacity_Btu_h) / 
   3412 / (AHU_Power + HP_Power))
 
@@ -166,18 +195,24 @@ data <- data %>% mutate(
 
 
 
+# Run diagnostics on missing power data
+  # Not sure how helpful this is...
+pwr_diag <- data.frame(
+  Site = df %>% group_by(Site_ID) %>% tally() %>% pull(Site_ID),
+  Percent_Missing_HP = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(HP_Power))/length(HP_Power)) %>% pull(col),
+  Percent_Missing_Aux = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(Aux_Power))/length(Aux_Power)) %>% pull(col)
+)
+write.table(pwr_diag, "clipboard",sep="\t",row.names = F)
 
 
 
-
-# Investigate time series
-
+# Investigate time series for any variable
 TimeSeries <- function(site, parameter, interval, timestart, timeend){
   # Look at a time series graph for a given parameter, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
   # The site can be a list of multiple sites if would like to compare.
   # The time start and end should be a date string in format for example "4/01/2022".
-  testdata %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
+  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID %in% site &
             Timestamp >= strptime(timestart,"%m/%d/%Y") &
             Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
@@ -195,12 +230,14 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
 
 TimeSeries(1, "Supply_Humidity", 5, "12/15/2022", "12/30/2022")
 
+
+
 # Temperature time series comparison chart
 TempTimeSeries <- function(site, interval, timestart, timeend){
   # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
   # The time start and end should be a date string in format for example "4/01/2022".
-  data %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
+  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
@@ -219,7 +256,7 @@ TempTimeSeries <- function(site, interval, timestart, timeend){
     geom_line(aes(y=Room2_TempF, color = "Room 2"),size=0.3) + 
     geom_line(aes(y=Room3_TempF, color = "Room 3"),size=0.3) + 
     geom_line(aes(y=AHU_TempF, color = "AHU Ambient"),size=0.3) + 
-    scale_y_continuous(breaks = seq(0,120, by=10), minor_breaks = seq(0, 120, by=1)) +
+    scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0, 200, by=1)) +
     scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
     labs(title=paste0("Temperature time series plot for site ", site),x="",y="Temperature (F)") +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -234,7 +271,7 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
   # Look at a time series graph for the four supply temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
   # The time start and end should be a date string in format for example "4/01/2022".
-  data %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
+  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
@@ -249,7 +286,7 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
     geom_line(aes(y=SA2_TempF, color = "SA2"),size=0.3) + 
     geom_line(aes(y=SA3_TempF, color = "SA3"),size=0.3) + 
     geom_line(aes(y=SA4_TempF, color = "SA4"),size=0.3) + 
-    scale_y_continuous(breaks = seq(0,120, by=10), minor_breaks = seq(0, 120, by=1)) +
+    scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0,200, by=1)) +
     scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
     labs(title=paste0("Supply temperature time series plot for site ", site),x="",y="Temperature (F)") +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -267,7 +304,7 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
   # The time start and end should be a date string in format for example "4/01/2022".
   # Scale for the secondary axis may need to be adjusted manually, and will get more
   # complicated once we have outdoor values.
-  data %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
+  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
@@ -276,15 +313,17 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
               HP_Power = mean(HP_Power,na.rm=T),
               Fan_Power = mean(Fan_Power,na.rm=T),
               Aux_Power = mean(Aux_Power,na.rm=T),
+              Total_Power = mean(AHU_Power + HP_Power, na.rm=T),
               OA_TempF = mean(OA_TempF,na.rm=T)) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
     geom_line(aes(y=OA_TempF/3, color = "Outdoor Temperature"),size=0.3) + 
+    geom_line(aes(y=Total_Power, color = "Total Power"),size=0.3) + 
     geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
     geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) + 
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
                        sec.axis = sec_axis(~.*3, name ="Outdoor Air Temperature (F)")) +
-    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
+    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
     labs(title=paste0("Power time series plot for site ", site),x="") +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
@@ -298,7 +337,7 @@ PowerTimeSeries("6950NE", 5, "12/01/2022", "12/31/2022")
   # Round to nearest 1 degree F (may want to consider larger intervals)
   # Only can select one site for this function
 HeatCapacity <- function(site, timestart, timeend){
-  data %>%
+  df %>%
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
@@ -328,7 +367,7 @@ HeatCapacity("6950NE", "12/01/2022", "12/30/2022")
   # I'm not sure how we will get the stage of operation.
       # VM: These should all be continously varying units, so we shouldn't have to worry about stages.
 COP <- function(site, timestart, timeend){
-  data %>%     
+  df %>%     
     filter(Site_ID %in% site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
@@ -353,8 +392,8 @@ COP("6950NE", "12/01/2022", "12/30/2022")
 
 # Supplemental resistance heat use compared to total energy use by temperature bin
   # Using 5 degree F intervals like the graph in the powerpoint
-SuppHeatUse <- function(site, timestart, timeend){
-  data %>%     
+AuxHeatUse <- function(site, timestart, timeend){
+  df %>%     
     filter(Site_ID %in% site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
@@ -373,14 +412,14 @@ SuppHeatUse <- function(site, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA))
   
 }
-SuppHeatUse("6950NE", "12/01/2022", "12/30/2022")
+AuxHeatUse("6950NE", "12/01/2022", "12/30/2022")
 
 
 # Heat pump return and supply temperature for outdoor temperature bins
   # Only one site can be entered at a time
   # I assume we want to filter out when supplemental heat is on, so added a filter for that
 SupplyReturnTemp <- function(site, timestart, timeend){
-  data %>%     
+  df %>%     
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y") &
@@ -414,10 +453,8 @@ SupplyReturnTemp("6950NE", "12/01/2022", "12/30/2022")
   # The graph in the powerpoint has it grouped into 3-month intervals, but I'm
   # trying one day intervals for now because our timeframe isn't as long
   # only one site can be entered at a time
-  # I did heat pump + supplemental power, I think that makes more sense than just heat pump power
-  # Need to think about how to convert kW to kWh when there could be missing data or uneven time intervals
 ElecUsage <- function(site, timestart, timeend){
-  tempdf <- data %>%     
+  tempdf <- df %>%     
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y") &
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
@@ -449,6 +486,30 @@ ElecUsage <- function(site, timestart, timeend){
 ElecUsage("6950NE", "12/01/2022", "12/30/2022")
 
 
+## Loop through all graphs and print for each site
+
+for (id in metadata$Site_ID){
+  timestart = "12/01/2022"
+  timeend = "12/31/2022"
+  
+  temp_time_series <- TempTimeSeries(id, 5, timestart, timeend)
+  supply_temp_time_series <- SupplyTempTimeSeries(id, 5, timestart, timeend)
+  power_time_series <- PowerTimeSeries(id, 5, timestart, timeend)
+  heat_capacity <- HeatCapacity(id, timestart, timeend)
+  cop <- COP(id, timestart, timeend)
+  aux_heat_use <- AuxHeatUse(id, timestart, timeend)
+  supply_return_temp <- SupplyReturnTemp(id, timestart, timeend)
+  elec_usage <- ElecUsage(id, timestart, timeend)
+  
+  ggsave('Temperature_TimeSeries.png', plot=temp_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
+  ggsave('Supply_Temperature_TimeSeries.png', plot=supply_temp_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
+  ggsave('Power_TimeSeries.png', plot=power_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
+  ggsave('HeatCapacity_HeatLoad_v_OAT.png', plot=heat_capacity, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
+  ggsave('HeatCOP_v_OAT.png', plot=cop, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
+  ggsave('AuxHeatPercent_v_OAT.png', plot=aux_heat_use, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
+  ggsave('SA_RA_v_OAT.png', plot=supply_return_temp, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
+  ggsave('Elec_Use_v_OAT.png', plot=elec_usage, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
+}
 
 
 
