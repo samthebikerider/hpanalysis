@@ -9,7 +9,7 @@ library(stringr)
 # Set working library
   # As a string variable to make it easier to change to folders within directory
 wd <- "C:/Users/keen930/PNNL/CCHP - General/Field Demonstration (Task 2)/R Data Analysis"
-
+wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/General/Field Demonstration (Task 2)/R Data Analysis"
 # Read data
 # read_plus <- function(file) {read_csv(file) %>% mutate(filename=file)}
 # df <- list.files(path = paste0(wd, "/Raw Data"),pattern="*.csv", full.names=T) %>% 
@@ -197,6 +197,7 @@ df <- df %>% mutate(
 
 # Run diagnostics on missing power data
   # Not sure how helpful this is...
+  # error on Mac OS: "Error in file(file, ifelse(append, "a", "w")) : 'mode' for the clipboard must be 'r' on Unix"
 pwr_diag <- data.frame(
   Site = df %>% group_by(Site_ID) %>% tally() %>% pull(Site_ID),
   Percent_Missing_HP = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(HP_Power))/length(HP_Power)) %>% pull(col),
