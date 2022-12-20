@@ -139,16 +139,20 @@ energyCalc <- function(site, timestamp, power){
   index <- which(!is.na(power))[1] + 1    # Second non-NA row
   ts <- timestamp[index]                  # Timestamp at first non-NA row
   energy <- rep(NA, length(site))         # Initialize vector for energy
+  ct <- site[index]                       # Initialize counter to detect new sites
   
   for(row in index:length(site)){
+    
     if(!is.na(power[row])){              # If the power is not NA, calculate energy from last time step
-      energy[row] = power[row] * difftime(timestamp[row], ts, units="hours")
+      if(site[row] == ct){               # Only calculate energy if there is not a new site
+        energy[row] = power[row] * difftime(timestamp[row], ts, units="hours")
+      }
       ts <- timestamp[row]
+      ct <- site[row]                    # Record of last site with non-NA
     }
   }
   energy    # Return energy vector as output
 }
-
 df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$Total_Power)
 
   # Heating capacity (Q-heating)
@@ -504,7 +508,7 @@ ElecUsage <- function(site, timestart, timeend){
              Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
     group_by(date) %>% 
     summarize(AirTemp = mean(OA_TempF, na.rm=T),
-              ElecUse = mean(AHU_Power + HP_Power, na.rm=T))
+              ElecUse = sum(Energy_kWh, na.rm=T))
   
   # Create transformation factor for secondary axis
     # Complicated because there can be positive and negative values for temp
@@ -519,7 +523,7 @@ ElecUsage <- function(site, timestart, timeend){
     geom_point(size=2, aes(y = AirTemp), color="red") +
     scale_color_manual(values=c("red","black")) +
     scale_y_continuous(name = "Outdoor Temperature (F)",
-                       sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (kW)")) +
+                       sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (kWh)")) +
     labs(title="Electricity Usage vs Outdoor Temperature",
          x="") +
     theme_bw() +
@@ -535,6 +539,7 @@ ElecUsage("6950NE", "12/01/2022", "12/30/2022")
 
 
 ## Loop through all graphs and print for each site
+  # Think about which graphs we might want to do for site-to-site comparison
 
 for (id in metadata$Site_ID){
   timestart = "12/01/2022"
