@@ -121,7 +121,8 @@ df <- df %>% mutate(
   # Auxiliary power
     # Is it just "Power" or the sum of "Power" and "Power."?
 df <- df %>% mutate(
-  Aux_Power = Aux1_Power + Aux2_Power + Aux3_Power + Aux4_Power)
+  Aux_Power = Aux1_Power + Aux2_Power + Aux3_Power + Aux4_Power,
+  Total_Power = AHU_Power + HP_Power)
 
 
   # Energy use
@@ -129,12 +130,23 @@ df <- df %>% mutate(
     # since the last power reading.
     # This assumes that if there is missing data, the eGauge will report the first
     # point after a gap as the average of the gap.
-temp <- df[0,] %>% mutate(Energy_Use_kWH = NA)
+df  <- df %>% mutate(Energy_Use_kWH = NA)
+temp <- df[0,] 
 for(id in metadata$Site_ID){
   sub <- df %>% filter(Site_ID == id) %>% arrange(Timestamp)
-  
-}
+  index <- which(!is.na(sub$Total_Power))[1] + 1 # Second non-NA row
+  ts <- sub$Timestamp[index]                     # Timestamp at first non-NA row
 
+  for(row in index:nrow(sub)){
+    if(!is.na(sub$Total_Power[row])){              # If the power is not NA, calculate energy from last timestep
+      sub$Energy_Use_kWH[row] = sub$Total_Power[row] * difftime(sub$Timestamp[row], ts, units="hours")
+      ts <- sub$Timestamp[row]
+    }
+  }
+  temp <- rbind(temp, sub)
+}
+df <- temp
+rm(temp, sub, id, row, index, ts)
 
   # Heating capacity (Q-heating)
     # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
@@ -313,7 +325,7 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
               HP_Power = mean(HP_Power,na.rm=T),
               Fan_Power = mean(Fan_Power,na.rm=T),
               Aux_Power = mean(Aux_Power,na.rm=T),
-              Total_Power = mean(AHU_Power + HP_Power, na.rm=T),
+              Total_Power = mean(Total_Power, na.rm=T),
               OA_TempF = mean(OA_TempF,na.rm=T)) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
     geom_line(aes(y=OA_TempF/3, color = "Outdoor Temperature"),size=0.3) + 
