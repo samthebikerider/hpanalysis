@@ -96,28 +96,25 @@ fan_power_curve <- function(fan_power, siteid){
   # Function will output the air supply in CFM for an input power in Watts
   # We will need to add a line for each site in this function.
   supply_flow_rate_CFM = ifelse(siteid=="6950NE",
-                      116.48 * fan_power ^ 0.3866,
+                      116.48 * (fan_power*1000) ^ 0.3866,
                       ifelse(siteid=="8220XE",
-                             152.27 * fan_power ^ 0.3812,
+                             152.27 * (fan_power*1000) ^ 0.3812,
                              NA))
 }
 df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
 
   # Operating mode
-    # Need to ask Michaels how to calculate this field
-    # Looks like the voltage is normal around 0V or 2.7V, so I'm guessing one 
-    # means heating mode and the other is cooling, but not clear. Setting only 
-    # to heating for now.
-    # Also need to consider in following equations how to treat operating mode
-    # when the system is turned off... should be in the mode that it was just before
-    # turning off I would think.
-# plot(x=df$RV_Volts, y=df$HP_Power)
-# plot(x=df$RV_Volts, y=df$SA_TempF)
+    # I'm pretty sure 0V indicates heating mode and 2.7-3.0V indicates cooling mode,
+    # but I'm not sure if this is the best way to classify. Because, if it is in 
+    # defrost mode, we don't want to be calculating cooling capacity, we want that
+    # to count against the heating capacity, I would think. So, I'm thinking of
+    # needing three modes: heating, cooling, and defrost for accurately pinpoint 
+    # what the operation is.
 df <- df %>% mutate(
-  Operating_Mode = ifelse(RV_Volts > -1, "Heating",
-                          ifelse(RV_Volts > -1, "Cooling",
-                                 "None")))
+  Operating_Mode = ifelse(RV_Volts < 0.1, "Heating",
+                          ifelse(OA_TempF < 40, "Defrost",
+                                 "Cooling")))
 
   # Auxiliary power
     # Is it just "Power" or the sum of "Power" and "Power."?
@@ -178,7 +175,7 @@ df <- df %>% mutate(
         # VM: This will yield -ve values which is what we want here but something to bear in mind during COP calcs.
 df <- df %>% mutate(
   Cooling_Capacity_Btu_h = ifelse(
-  Operating_Mode == "Heating", NA,
+  Operating_Mode == "Heating"|Operating_Mode=="Defrost", NA,
     0.0765 *                                                          # Density of air at 15C (lb/ft3)
     supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
     (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
@@ -188,7 +185,7 @@ df <- df %>% mutate(
 # Cooling load
 df <- df %>% mutate(
   Cooling_Load_Btu_h = ifelse(
-    Operating_Mode == "Heating", NA,
+    Operating_Mode == "Heating"|Operating_Mode=="Defrost", NA,
     (AHU_Power + HP_Power) * 3412))                                   # Convert total system power from kW to Btu/hr
 
 
@@ -215,14 +212,15 @@ df <- df %>% mutate(
 
 
 # Run diagnostics on missing power data
-  # Not sure how helpful this is...
+  # Not sure how helpful this is... keeping it here in case we want to update
+  # with a statistics table of some sort as an output.
   # error on Mac OS: "Error in file(file, ifelse(append, "a", "w")) : 'mode' for the clipboard must be 'r' on Unix"
-pwr_diag <- data.frame(
-  Site = df %>% group_by(Site_ID) %>% tally() %>% pull(Site_ID),
-  Percent_Missing_HP = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(HP_Power))/length(HP_Power)) %>% pull(col),
-  Percent_Missing_Aux = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(Aux_Power))/length(Aux_Power)) %>% pull(col)
-)
-write.table(pwr_diag, "clipboard",sep="\t",row.names = F)
+# pwr_diag <- data.frame(
+#   Site = df %>% group_by(Site_ID) %>% tally() %>% pull(Site_ID),
+#   Percent_Missing_HP = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(HP_Power))/length(HP_Power)) %>% pull(col),
+#   Percent_Missing_Aux = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(Aux_Power))/length(Aux_Power)) %>% pull(col)
+# )
+# write.table(pwr_diag, "clipboard",sep="\t",row.names = F)
 
 
 
