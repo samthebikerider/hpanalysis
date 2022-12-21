@@ -322,11 +322,46 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-SupplyTempTimeSeries("6950NE", 5, "12/01/2022", "12/31/2022")
+SupplyTempTimeSeries("8220XE", 5, "12/14/2022", "12/15/2022")
+#6950NE
+
+# Four aux sensor time series comparison chart
+AuxTimeSeries <- function(site, interval, timestart, timeend){
+  # Look at a time series graph for the four supply temperature monitors, time interval (e.g, 5-minute), time period, and site
+  # Interval is in units of minutes, and so the maximum interval would be one hour.
+  # The time start and end should be a date string in format for example "4/01/2022".
+  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
+    group_by(Site_ID,date, hour, Interval) %>% 
+    summarize(Timestamp = Timestamp[1],
+              Aux1_Power = mean(Aux1_Power,na.rm=T),
+              Aux2_Power = mean(Aux2_Power,na.rm=T),
+              Aux3_Power = mean(Aux3_Power,na.rm=T),
+              Aux4_Power = mean(Aux4_Power,na.rm=T)) %>%
+    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    geom_line(aes(y=Aux1_Power, color = "Aux1"),size=0.3) + 
+    geom_line(aes(y=Aux2_Power, color = "Aux2"),size=0.3) + 
+    geom_line(aes(y=Aux3_Power, color = "Aux3"),size=0.3) + 
+    geom_line(aes(y=Aux4_Power, color = "Aux4"),size=0.3) + 
+    scale_y_continuous(breaks = seq(0,50, by=1)) +
+    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")) +
+    labs(title=paste0("Auxiliary legs comparison time series plot for site ", site),x="",y="Power (kW)") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+AuxTimeSeries("8220XE", 5, "12/17/2022", "12/18/2022")
 
 
 # Power time series comparison chart with OAT
-PowerTimeSeries <- function(site, interval, timestart, timeend){
+PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
   # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
   # The time start and end should be a date string in format for example "4/01/2022".
@@ -339,20 +374,20 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
     group_by(Site_ID,date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
               HP_Power = mean(HP_Power,na.rm=T),
-              Fan_Power = mean(Fan_Power*10,na.rm=T),
+              Fan_Power = mean(Fan_Power,na.rm=T),
               Aux_Power = mean(Aux_Power,na.rm=T),
               Total_Power = mean(Total_Power, na.rm=T),
               OA_TempF = mean(OA_TempF,na.rm=T)) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=OA_TempF/3, color = "Outdoor Temperature"),size=0.3) + 
+    geom_line(aes(y=OA_TempF/2.5, color = "Outdoor Temperature"),size=0.3) + 
     geom_line(aes(y=Total_Power, color = "Total Power"),size=0.3) + 
     geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
     geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) + 
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
-                       sec.axis = sec_axis(~.*3, name ="Outdoor Air Temperature (F)")) +
+                       sec.axis = sec_axis(~.*2.5, name ="Outdoor Air Temperature (F)")) +
     scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
-    labs(title=paste0("Power time series plot for site ", site),x="") +
+    labs(title=paste0("Power and OA temp time series plot for site ", site),x="") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
@@ -362,7 +397,82 @@ PowerTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-PowerTimeSeries("8220XE", 5, "12/17/2022", "12/19/2022")
+PowerTimeSeriesOAT("8220XE", 5, "12/01/2022", "12/31/2022")
+
+# Power time series comparison chart with supply temperature
+PowerTimeSeriesSA <- function(site, interval, timestart, timeend){
+  # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
+  # Interval is in units of minutes, and so the maximum interval would be one hour.
+  # The time start and end should be a date string in format for example "4/01/2022".
+  # Scale for the secondary axis may need to be adjusted manually, and will get more
+  # complicated once we have outdoor values.
+  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
+    group_by(Site_ID,date, hour, Interval) %>% 
+    summarize(Timestamp = Timestamp[1],
+              HP_Power = mean(HP_Power,na.rm=T),
+              Fan_Power = mean(Fan_Power,na.rm=T),
+              Aux_Power = mean(Aux_Power,na.rm=T),
+              Total_Power = mean(Total_Power, na.rm=T),
+              SA_TempF = mean(SA_TempF,na.rm=T)) %>%
+    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    geom_line(aes(y=SA_TempF/5, color = "Supply Air Temperature"),size=0.3) + 
+    geom_line(aes(y=Total_Power, color = "Total Power"),size=0.3) + 
+    geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
+    geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) + 
+    geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
+    scale_y_continuous(name = "Power (kW)",
+                       sec.axis = sec_axis(~.*5, name ="Supply Air Temperature (F)")) +
+    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    labs(title=paste0("Power and SA temp time series plot for site ", site),x="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+PowerTimeSeriesSA("6950NE", 5, "12/11/2022", "12/12/2022")
+
+
+# Reversing valve voltage chart with supply temperature
+RevValveTimeSeries <- function(site, interval, timestart, timeend){
+  # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
+  # Interval is in units of minutes, and so the maximum interval would be one hour.
+  # The time start and end should be a date string in format for example "4/01/2022".
+  # Scale for the secondary axis may need to be adjusted manually, and will get more
+  # complicated once we have outdoor values.
+  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y")) %>%
+    group_by(Site_ID,date, hour, Interval) %>% 
+    summarize(Timestamp = Timestamp[1],
+              HP_Power = mean(HP_Power,na.rm=T),
+              RV_Volts = mean(RV_Volts,na.rm=T),
+              SA_TempF = mean(SA_TempF,na.rm=T)) %>%
+    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    geom_line(aes(y=SA_TempF/20, color = "Supply Air Temperature"),size=0.3) + 
+    geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
+    geom_line(aes(y=RV_Volts, color = "RV Voltage"),size=0.3) + 
+    scale_y_continuous(name = "Power (kW)/Volts",
+                       sec.axis = sec_axis(~.*20, name ="Outdoor Air Temperature (F)")) +
+    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9", "black","#009E73", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    labs(title=paste0("RV Voltage and SA temp time series plot for site ", site),x="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+RevValveTimeSeries("6950NE", 5, "12/11/2022", "12/12/2022")
 
 
 # Heating capacity (Btu/h) vs outdoor air temperature
@@ -541,7 +651,10 @@ ElecUsage("6950NE", "12/01/2022", "12/30/2022")
 
 
 # Add graph for % of time per hour heat pump and aux heat are running
-df %>% filter(Site_ID == "8220XE" & Date == strptime("12/15/2022","%m/%d/%Y"))
+
+
+
+
 
 
 
