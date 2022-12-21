@@ -96,9 +96,9 @@ fan_power_curve <- function(fan_power, siteid){
   # Function will output the air supply in CFM for an input power in Watts
   # We will need to add a line for each site in this function.
   supply_flow_rate_CFM = ifelse(siteid=="6950NE",
-                      152.27 * fan_power ^ 0.3812,
+                      116.48 * fan_power ^ 0.3866,
                       ifelse(siteid=="8220XE",
-                             152.27 * fan_power ^ 0.3812,  # This one needs to be updated
+                             152.27 * fan_power ^ 0.3812,
                              NA))
 }
 df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
