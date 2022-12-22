@@ -206,27 +206,46 @@ df <- df %>% mutate(
   3412 / (AHU_Power + HP_Power))
 
 
-# Calculate heat run cycles for heat pump
+# Calculate heat run cycle duration for heat pump
 runCycleCalc <- function(site, timestamp, power, operate){
   
-  index <- which(!is.na(power))[1] + 1    # Second non-NA row
+  index <- which(operate == "Heating" & power > 0.1)[1]    # First row in heating mode with power
   ts <- timestamp[index]                  # Timestamp at first non-NA row
-  cycle <- rep(NA, length(site))         # Initialize vector for energy
-  ct <- site[index]                       # Initialize counter to detect new cycles
+  cycle <- rep(NA, length(site))          # Initialize vector for cycle runtimes
+  ct <- site[index]                       # Initialize counter to detect new site
+  pwr <- TRUE                             # Tracker for when heat pump power is not zero and not in defrost mode
   
-  for(row in index:length(site)){
-    
-    if(!is.na(power[row])){              # If the power is not NA, calculate energy from last time step
-      if(site[row] == ct){               # Only calculate energy if there is not a new site
-        energy[row] = power[row] * difftime(timestamp[row], ts, units="hours")
+  for(row in (index+1):length(site)){
+
+    if(is.na(operate[row])){
+      # If there is an NA value, skip to next row
+      next
+      
+    } else if(site[row] != ct){
+      # If there is a new site, do not calculate previous cycle
+      ts <- timestamp[row]                   # Reset timestamp
+      ct <- site[row]                        # Update record of site
+
+    } else if((power[row] < 0.1 | operate[row] != "Heating") & pwr){
+      # If the power is ~0 or enters defrost/cooling, calculate previous cycle
+        # Note that the power never goes complete to zero, so using 0.1 as threshold
+      cycle[row] <- difftime(timestamp[row], ts, units="mins")
+      pwr <- FALSE                           # Reset tracker
+ 
+    } else if(pwr==FALSE){
+      # If the previous row was zero power/defrost mode, do not calculate cycle
+      if(power[row] > 0.1 & operate[row] == "Heating"){
+        # If the power is greater than zero and back in heating mode, reset cycle
+        pwr <- TRUE
+        ts <- timestamp[row]                   # Reset timestamp
       }
-      ts <- timestamp[row]
-      ct <- site[row]                    # Record of last site with non-NA
+    
     }
   }
-  energy    # Return energy vector as output
+  
+  cycle    # Return cycle vector as output
 }
-df$Energy_kWh <- runCycleCalc(df$Site_ID, df$Timestamp, df$HP_Power, df$Operating_Mode)
+df$Heat_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$HP_Power, df$Operating_Mode)
 
 
 
