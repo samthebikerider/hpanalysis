@@ -206,6 +206,27 @@ df <- df %>% mutate(
   3412 / (AHU_Power + HP_Power))
 
 
+# Calculate heat run cycles for heat pump
+runCycleCalc <- function(site, timestamp, power, operate){
+  
+  index <- which(!is.na(power))[1] + 1    # Second non-NA row
+  ts <- timestamp[index]                  # Timestamp at first non-NA row
+  cycle <- rep(NA, length(site))         # Initialize vector for energy
+  ct <- site[index]                       # Initialize counter to detect new cycles
+  
+  for(row in index:length(site)){
+    
+    if(!is.na(power[row])){              # If the power is not NA, calculate energy from last time step
+      if(site[row] == ct){               # Only calculate energy if there is not a new site
+        energy[row] = power[row] * difftime(timestamp[row], ts, units="hours")
+      }
+      ts <- timestamp[row]
+      ct <- site[row]                    # Record of last site with non-NA
+    }
+  }
+  energy    # Return energy vector as output
+}
+df$Energy_kWh <- runCycleCalc(df$Site_ID, df$Timestamp, df$HP_Power, df$Operating_Mode)
 
 
 
@@ -245,7 +266,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries(1, "Supply_Humidity", 5, "12/15/2022", "12/30/2022")
+# TimeSeries(1, "Supply_Humidity", 5, "12/15/2022 00:00", "12/30/2022 00:00")
 # "6950NE"
 
 
@@ -285,7 +306,7 @@ TempTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TempTimeSeries("6950NE", 5, "12/01/2022", "12/31/2022")
+# TempTimeSeries("6950NE", 5, "12/01/2022 00:00", "12/31/2022 00:00")
 # "8220XE"
 
 # Supply temperature time series comparison chart
@@ -320,7 +341,7 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# SupplyTempTimeSeries("8220XE", 5, "12/14/2022", "12/15/2022")
+# SupplyTempTimeSeries("8220XE", 5, "12/14/2022 00:00", "12/15/2022 00:00")
 #6950NE
 
 # Four aux sensor time series comparison chart
@@ -355,7 +376,7 @@ AuxTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# AuxTimeSeries("8220XE", 5, "12/17/2022", "12/18/2022")
+# AuxTimeSeries("8220XE", 5, "12/17/2022 00:00", "12/18/2022 00:00")
 
 
 # Power time series comparison chart with OAT
@@ -395,7 +416,7 @@ PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# PowerTimeSeriesOAT("8220XE", 5, "12/01/2022", "12/31/2022")
+# PowerTimeSeriesOAT("8220XE", 5, "12/01/2022 00:00", "12/31/2022 00:00")
 
 # Power time series comparison chart with supply temperature
 PowerTimeSeriesSA <- function(site, interval, timestart, timeend){
@@ -434,7 +455,7 @@ PowerTimeSeriesSA <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# PowerTimeSeriesSA("6950NE", 5, "12/11/2022", "12/12/2022")
+# PowerTimeSeriesSA("6950NE", 5, "12/11/2022 00:00", "12/12/2022 00:00")
 
 
 # Reversing valve voltage chart with supply temperature
@@ -470,13 +491,13 @@ RevValveTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# RevValveTimeSeries("6950NE", 5, "12/11/2022", "12/12/2022")
+# RevValveTimeSeries("6950NE", 5, "12/11/2022 00:00", "12/12/2022 00:00")
 
 
 # Heating capacity (Btu/h) vs outdoor air temperature
   # Round to nearest 1 degree F (may want to consider larger intervals)
   # Only can select one site for this function
-HeatCapacity <- function(site, timestart, timeend){
+HeatCapacityOAT <- function(site, timestart, timeend){
   df %>%
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
@@ -484,7 +505,8 @@ HeatCapacity <- function(site, timestart, timeend){
     group_by(temp_int = round(OA_TempF)) %>% 
     filter(!is.na(temp_int)) %>%
     summarize(Heating_Capacity = mean(Heating_Capacity_Btu_h, na.rm=T),
-              Heating_Load = mean(Heating_Load_Btu_h, na.rm=T)) %>%
+              Heating_Load = mean(Heating_Load_Btu_h, na.rm=T),
+              Outdoor_Temp = mean(OA_TempF)) %>%
     ggplot(aes(x = temp_int)) + 
     geom_line(size = 1, aes(y = Heating_Capacity, color="Heating Capacity")) +
     geom_line(size = 1, aes(y = Heating_Load, color="Heating Load")) +
@@ -499,10 +521,40 @@ HeatCapacity <- function(site, timestart, timeend){
           legend.title = element_blank(),
           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# HeatCapacity("6950NE", "12/01/2022", "12/30/2022")
+# HeatCapacityOAT("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
 
+
+# Heating capacity (Btu/h) and heating load with outdoor air temperature as timeseries
+HeatCapacityTimeSeries <- function(site, interval, timestart, timeend){
+  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
+    group_by(Site_ID,date, hour, Interval) %>% 
+    summarize(Timestamp = Timestamp[1],
+              Heating_Capacity = mean(Heating_Capacity_Btu_h,na.rm=T),
+              Heating_Load = mean(Heating_Load_Btu_h,na.rm=T),
+              OA_Temp = mean(OA_TempF,na.rm=T)) %>%
+    ggplot(aes(x = as.POSIXct(Timestamp))) + 
+    geom_line(size = 0.3, aes(y = Heating_Capacity, color="Heating Capacity")) +
+    geom_line(size = 0.3, aes(y = Heating_Load, color="Heating Load")) +
+    geom_line(size = 0.3, aes(y = OA_Temp*1000, color="Outdoor Air Temperature")) +
+    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9", "black","#009E73", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    scale_y_continuous(name = "Heating Capacity/Load (Btu/hr)",
+                       sec.axis = sec_axis(~./1000, name ="Outdoor Air Temperature (F)")) +
+    labs(title=paste0("Heating Capacity/Heating Load and Outdoor Air Temperature Time Series for site ",site),
+         x="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+HeatCapacityTimeSeries("6950NE", 5, "12/01/2022 00:00", "12/30/2022 00:00")
 
 
 
@@ -531,7 +583,7 @@ COP <- function(site, timestart, timeend){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
 }
-# COP("6950NE", "12/01/2022", "12/30/2022")
+# COP("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
 
 
 ## Need to figure out how to do staging charts and defrost mode run time chart
@@ -564,7 +616,7 @@ AuxHeatUse <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
   
 }
-# AuxHeatUse("6950NE", "12/01/2022", "12/30/2022")
+# AuxHeatUse("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
 
 
 # Heat pump return and supply temperature for outdoor temperature bins
@@ -598,10 +650,7 @@ SupplyReturnTemp <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
   
 }
-# SupplyReturnTemp("6950NE", "12/01/2022", "12/30/2022")
-
-
-## Skipping the cooling mode graphs for now, not a priority
+# SupplyReturnTemp("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
 
 
 
@@ -643,22 +692,50 @@ ElecUsage <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
   
 }
-# ElecUsage("6950NE", "12/01/2022", "12/30/2022")
+# ElecUsage("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
 
 
 
 
-# Add graph for % of time per hour heat pump and aux heat are running
+# Percent of time that heat pump and aux heat are running as timeseries
+SystemOperationTimeSeries <- function(site, timestart, timeend){
+  # Look at a time series graph to see for every hour, what percentage of that
+  # hour is the heat pump operating and the auxiliary heat.
+  df %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
+    group_by(Site_ID, date, hour) %>% 
+    summarize(Timestamp = Timestamp[1],
+              Aux_Perc = sum(Aux_Power > 0.1,na.rm=T)/sum(!is.na(Aux_Power)),
+              HP_Perc = sum(HP_Power > 0.1,na.rm=T)/sum(!is.na(HP_Power)),
+              OA_Temp = mean(OA_TempF,na.rm=T)) %>%
+    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    geom_line(aes(y=OA_Temp/20, color = "Supply Air Temperature"),size=0.3) + 
+    geom_line(aes(y=Aux_Perc, color = "Auxiliary"),size=0.3) + 
+    geom_line(aes(y=HP_Perc, color = "Heat Pump"),size=0.3) + 
+    scale_y_continuous(name = "Percent (%)",
+                       sec.axis = sec_axis(~.*20, name ="Outdoor Air Temperature (F)")) +
+    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9", "black","#009E73", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    labs(title=paste0("Percent of time system is operating for site ", site),x="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+SystemOperationTimeSeries("6950NE", "12/01/2022 00:00", "12/31/2022 00:00")
 
 
-
+# Graph to calculate number of run cycles and average length of cycle per day
 
 
 
 
 ## Loop through all graphs and print for each site
-  # Think about which graphs we might want to do for site-to-site comparison
-
 for (id in metadata$Site_ID){
   timestart = "12/01/2022 00:00"
   timeend = "12/31/2022 00:00"
@@ -667,11 +744,13 @@ for (id in metadata$Site_ID){
   supply_temp_time_series <- SupplyTempTimeSeries(id, 5, timestart, timeend)
   power_time_series_oat <- PowerTimeSeriesOAT(id, 5, timestart, timeend)
   power_time_series_sa <- PowerTimeSeriesSA(id, 5, timestart, timeend)
-  heat_capacity <- HeatCapacity(id, timestart, timeend)
+  heat_capacity_oat <- HeatCapacityOAT(id, timestart, timeend)
+  heat_capacity_time_series <- HeatCapacityTimeSeries(id, timestart, timeend)
   cop <- COP(id, timestart, timeend)
   aux_heat_use <- AuxHeatUse(id, timestart, timeend)
   supply_return_temp <- SupplyReturnTemp(id, timestart, timeend)
   elec_usage <- ElecUsage(id, timestart, timeend)
+  system_operation <- SystemOperationTimeSeries(id, timestart, timeend)
   
   ggsave('Temperature_TimeSeries.png', plot=temp_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Supply_Temperature_TimeSeries.png', plot=supply_temp_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
@@ -683,6 +762,9 @@ for (id in metadata$Site_ID){
   ggsave('SA_RA_v_OAT.png', plot=supply_return_temp, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Elec_Use_v_OAT.png', plot=elec_usage, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
 }
+
+# Produce site comparison graphs
+
 
 
 
