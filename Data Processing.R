@@ -516,7 +516,6 @@ RevValveTimeSeries <- function(site, interval, timestart, timeend){
 
 
 # Heating capacity (Btu/h) vs outdoor air temperature
-  # Round to nearest 1 degree F (may want to consider larger intervals)
   # Only can select one site for this function
 HeatCapacityOAT <- function(site, timestart, timeend){
   df %>%
@@ -524,14 +523,15 @@ HeatCapacityOAT <- function(site, timestart, timeend){
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
              OA_TempF <= 55) %>%
-    group_by(temp_int = round(OA_TempF)) %>% 
+    group_by(temp_int = cut(OA_TempF,
+                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
     filter(!is.na(temp_int)) %>%
     summarize(Heating_Capacity = mean(Heating_Capacity_Btu_h, na.rm=T),
               Heating_Load = mean(Heating_Load_Btu_h, na.rm=T),
               Outdoor_Temp = mean(OA_TempF)) %>%
     ggplot(aes(x = temp_int)) + 
-    geom_line(size = 1, aes(y = Heating_Capacity, color="Heating Capacity")) +
-    geom_line(size = 1, aes(y = Heating_Load, color="Heating Load")) +
+    geom_line(size = 1, aes(y = Heating_Capacity, color="Heating Capacity", group=1)) +
+    geom_line(size = 1, aes(y = Heating_Load, color="Heating Load", group=1)) +
     geom_point(size=2, aes(y = Heating_Capacity), color="red") +
     geom_point(size=2, aes(y = Heating_Load), color="blue") +
     scale_color_manual(values=c("red","blue")) +
@@ -591,7 +591,7 @@ Heat_COP <- function(site, timestart, timeend){
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
              OA_TempF <= 55) %>%
     group_by(Site_ID, temp_int = cut(OA_TempF,
-                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45))) %>% 
+                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
     summarize(COP = mean(COP_Heating, na.rm=T)) %>%
   ggplot(aes(x = temp_int, y = COP, color = as.character(Site_ID), group=Site_ID)) + 
     geom_line(size = 1) +
@@ -620,9 +620,10 @@ AuxHeatUse <- function(site, timestart, timeend){
   df %>%     
     filter(Site_ID %in% site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
+             OA_TempF <= 55) %>%
     group_by(Site_ID, temp_int = cut(OA_TempF,
-                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45))) %>% 
+                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
     summarize(SuppHeat = mean(Aux_Power / (AHU_Power + HP_Power), na.rm=T)) %>%
     filter(!is.na(temp_int)) %>%
     ggplot(aes(x = temp_int, y = SuppHeat, color = as.character(Site_ID), group = Site_ID)) + 
@@ -644,24 +645,22 @@ AuxHeatUse <- function(site, timestart, timeend){
 
 
 # Heat pump return and supply temperature for outdoor temperature bins
-  # Only one site can be entered at a time
-  # I assume we want to filter out when supplemental heat is on, so added a filter for that
 SupplyReturnTemp <- function(site, timestart, timeend){
   df %>%     
-    filter(Site_ID == site &
+    filter(Site_ID %in% site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
-             Aux_Power == 0) %>%
-    group_by(temp_int = cut(OA_TempF, breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45))) %>% 
+             OA_TempF <= 55) %>%
+    group_by(Site_ID, temp_int = cut(OA_TempF, breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
     summarize(SupplyTemp = mean(SA_TempF, na.rm=T),
               ReturnTemp = mean(RA_TempF, na.rm=T)) %>%
     filter(!is.na(temp_int)) %>%
-    ggplot(aes(x = temp_int)) + 
-    geom_line(size = 1, aes(y = SupplyTemp, color="Supply Temperature", group=1)) +
-    geom_line(size = 1, aes(y = ReturnTemp, color="Return Temperature", group=1)) +
-    geom_point(size=2, aes(y = SupplyTemp), color="red") +
-    geom_point(size=2, aes(y = ReturnTemp), color="blue") +
-    scale_color_manual(values=c("blue","red")) +
+    ggplot(aes(x = temp_int, color = Site_ID)) + 
+    geom_line(size = 1, aes(y = SupplyTemp, linetype="Supply Temperature", group=Site_ID)) +
+    geom_line(size = 1, aes(y = ReturnTemp, linetype="Return Temperature", group=Site_ID)) +
+    geom_point(size=2, aes(y = SupplyTemp), linetype="solid") +
+    geom_point(size=2, aes(y = ReturnTemp), linetype="dashed") +
+    scale_linetype_manual(values=c("dashed","solid")) +
     labs(title="Supply and Return Temperature per Outdoor Temperature Bin",
          x="Outdoor Temperature Bin (F)",
          y="Indoor Temperature (F)") +
@@ -674,7 +673,7 @@ SupplyReturnTemp <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
   
 }
-# SupplyReturnTemp("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
+SupplyReturnTemp(c("6950NE","8220XE","4228VB"), "12/01/2022 00:00", "12/30/2022 00:00")
 
 
 
@@ -807,7 +806,6 @@ for (id in metadata$Site_ID){
   reverse_valve_time_series <- RevValveTimeSeries(id, 5, timestart, timeend)
   heat_capacity_oat <- HeatCapacityOAT(id, timestart, timeend)
   heat_capacity_time_series <- HeatCapacityTimeSeries(id, 10, timestart, timeend)
-  supply_return_temp <- SupplyReturnTemp(id, timestart, timeend)
   elec_usage <- ElecUsage(id, timestart, timeend)
   system_operation <- SystemOperationTimeSeries(id, timestart, timeend)
   runtime_time_series <- RunTimesTimeSeries(id, timestart, timeend)
@@ -820,7 +818,6 @@ for (id in metadata$Site_ID){
   ggsave('Reverse_Valve_TimeSeries.png', plot=reverse_valve_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('HeatCapacity_HeatLoad_v_OAT.png', plot=heat_capacity_oat, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('HeatCapacity_HeatLoad_TimeSeries.png', plot=heat_capacity_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-  ggsave('SA_RA_v_OAT.png', plot=supply_return_temp, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Elec_Use_v_OAT.png', plot=elec_usage, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Aux_HP_System_Operation_TimeSeries.png', plot=system_operation, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Runtime_TimeSeries.png', plot=runtime_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
@@ -830,5 +827,6 @@ for (id in metadata$Site_ID){
 # Produce site comparison graphs
 ggsave('HeatCOP_v_OAT.png', plot=Heat_COP(unique(df$Site_ID), "12/01/2022 00:00", "12/31/2022 00:00"), path=paste0(wd,'/Graphs/Site Comparison'), width=12, height=4, units='in')
 ggsave('AuxHeatPercent_v_OAT.png', plot=AuxHeatUse(unique(df$Site_ID), "12/01/2022 00:00", "12/31/2022 00:00"), path=paste0(wd,'/Graphs/Site Comparison'), width=12, height=4, units='in')
+ggsave('SA_RA_v_OAT.png', plot=SupplyReturnTemp(unique(df$Site_ID), "12/01/2022 00:00", "12/31/2022 00:00"), path=paste0(wd,'/Graphs/Site Comparison'), width=12, height=4, units='in')
 
 
