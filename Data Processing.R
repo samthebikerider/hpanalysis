@@ -107,12 +107,12 @@ df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
 
   # Operating mode
-    # I'm pretty sure 0V indicates heating mode and 2.7-3.0V indicates cooling mode,
-    # but I'm not sure if this is the best way to classify. Because, if it is in 
+    # For Lennox, 0V indicates heating mode and 2.7-3.0V indicates cooling mode,
+    # but defrost is also cooling and needs to be separated. Because, if it is in 
     # defrost mode, we don't want to be calculating cooling capacity, we want that
-    # to count against the heating capacity, I would think. So, I'm thinking of
-    # needing three modes: heating, cooling, and defrost for accurately pinpoint 
-    # what the operation is.
+    # to count against the heating capacity, I would think. So, I'm making
+    # three modes: heating, cooling, and defrost for accurately pinpoint 
+    # what the operation is, using outdoor air temperature to help.
 df <- df %>% mutate(
   Operating_Mode = ifelse(RV_Volts < 0.1, "Heating",
                           ifelse(OA_TempF < 40, "Defrost",
@@ -154,8 +154,16 @@ energyCalc <- function(site, timestamp, power){
 }
 df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$Total_Power)
 
-  # Heating capacity (Q-heating)
+
+  # Heat Pump Heat Output
+
+
+  # Heat Pump Heating capacity (Q-heating)
     # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
+    # Renaming to Heat Output, because above the balance point the system will not
+    # be running at full capacity.
+    # Need to think about how to calculate Heating Capacity -- perhaps only taking
+    # times when the heat pump is at full power.
 df <- df %>% mutate(
   Heating_Capacity_Btu_h = ifelse(
   Operating_Mode == "Cooling", NA,
@@ -195,9 +203,7 @@ df <- df %>% mutate(
     # VM: wondering if we should report COP with and without supplemental heat.
     # I personally think that supplemental heat should not be part of the COP
     # but we need to align this with the challenge spec.
-    # KK: To calculate COP of just heat pump we would need to remove all data where the
-    # auxiliary heat is operating, and so there might be some temperature bins where
-    # we wouldn't have results.
+    # KK: Right now heating capacity subtracts auxiliary heat component.
 df <- df %>% mutate(
   COP_Heating = Heating_Capacity_Btu_h / 
   3412 / (AHU_Power + HP_Power))
@@ -251,20 +257,55 @@ df$Heat_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$HP_Power, df
 
 
 
-
+### Diagnostic Tables ----
 
 # Run diagnostics on missing power data
   # Not sure how helpful this is... keeping it here in case we want to update
   # with a statistics table of some sort as an output.
   # error on Mac OS: "Error in file(file, ifelse(append, "a", "w")) : 'mode' for the clipboard must be 'r' on Unix"
-# pwr_diag <- data.frame(
-#   Site = df %>% group_by(Site_ID) %>% tally() %>% pull(Site_ID),
-#   Percent_Missing_HP = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(HP_Power))/length(HP_Power)) %>% pull(col),
-#   Percent_Missing_Aux = df %>% group_by(Site_ID) %>% summarize(col = sum(is.na(Aux_Power))/length(Aux_Power)) %>% pull(col)
-# )
-# write.table(pwr_diag, "clipboard",sep="\t",row.names = F)
+powerDiagnostics <- function(site){
+  pwr_diag <- df %>% filter(Site_ID==site) %>% group_by(date) %>% summarize(
+    Percent_NA_HP = sum(is.na(HP_Power))/length(HP_Power),
+    Percent_NA_Aux = sum(is.na(Aux_Power))/length(Aux_Power))
+  
+  pwr_diag  # Return diagnostics table to write to clipboard
+}
+view(powerDiagnostics("6950NE"))
+write.table(powerDiagnostics("6950NE"), "clipboard",sep="\t",row.names = F)
+# 4228VB
+# 6950NE
+# 8220XE
+
+OATDiagnostics <- function(){
+  oat_diag <- df %>% group_by(Site_ID) %>% summarize(
+    Percent_Less_Than_Neg25 = sum(OA_TempF <= -25, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg25_to_Neg20 = sum(OA_TempF > -25 & OA_TempF <= -20, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg20_to_Neg15 = sum(OA_TempF > -20 & OA_TempF <= -15, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg15_to_Neg10 = sum(OA_TempF > -15 & OA_TempF <= -10, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg10_to_Neg5 = sum(OA_TempF > -10 & OA_TempF <= -5, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg5_to_0 = sum(OA_TempF > -5 & OA_TempF <= 0, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_0_to_5 = sum(OA_TempF > 0 & OA_TempF <= 5, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_5_to_10 = sum(OA_TempF > 5 & OA_TempF <= 10, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_10_to_15 = sum(OA_TempF > 10 & OA_TempF <= 15, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_15_to_20 = sum(OA_TempF > 15 & OA_TempF <= 20, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_20_to_25 = sum(OA_TempF > 20 & OA_TempF <= 25, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_25_to_30 = sum(OA_TempF > 25 & OA_TempF <= 30, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_30_to_35 = sum(OA_TempF > 30 & OA_TempF <= 35, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_35_to_40 = sum(OA_TempF > 35 & OA_TempF <= 40, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_40_to_45 = sum(OA_TempF > 40 & OA_TempF <= 45, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_More_Than_45 = sum(OA_TempF > 45, na.rm=T)/sum(!is.na(OA_TempF))
+  )
+  
+  oat_diag  # Return diagnostics table to write to clipboard
+}
+view(OATDiagnostics())
+write.table(OATDiagnostics(), "clipboard",sep="\t",row.names = F)
 
 
+
+
+
+### Time Series Graphs ----
 
 # Investigate time series for any variable
 TimeSeries <- function(site, parameter, interval, timestart, timeend){
@@ -400,6 +441,7 @@ AuxTimeSeries <- function(site, interval, timestart, timeend){
 # AuxTimeSeries("8220XE", 5, "12/17/2022 00:00", "12/18/2022 00:00")
 
 
+
 # Power time series comparison chart with OAT
 PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
   # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
@@ -437,7 +479,8 @@ PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# PowerTimeSeriesOAT("8220XE", 5, "12/01/2022 00:00", "12/31/2022 00:00")
+# PowerTimeSeriesOAT("8220XE", 5, "12/13/2022 00:00", "12/14/2022 00:00")
+
 
 # Power time series comparison chart with supply temperature
 PowerTimeSeriesSA <- function(site, interval, timestart, timeend){
@@ -514,40 +557,6 @@ RevValveTimeSeries <- function(site, interval, timestart, timeend){
 }
 # RevValveTimeSeries("6950NE", 5, "12/11/2022 00:00", "12/12/2022 00:00")
 
-
-# Heating capacity (Btu/h) vs outdoor air temperature
-  # Only can select one site for this function
-HeatCapacityOAT <- function(site, timestart, timeend){
-  df %>%
-    filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
-             OA_TempF <= 55) %>%
-    group_by(temp_int = cut(OA_TempF,
-                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
-    filter(!is.na(temp_int)) %>%
-    summarize(Heating_Capacity = mean(Heating_Capacity_Btu_h, na.rm=T),
-              Heating_Load = mean(Heating_Load_Btu_h, na.rm=T),
-              Outdoor_Temp = mean(OA_TempF)) %>%
-    ggplot(aes(x = temp_int)) + 
-    geom_line(size = 1, aes(y = Heating_Capacity, color="Heating Capacity", group=1)) +
-    geom_line(size = 1, aes(y = Heating_Load, color="Heating Load", group=1)) +
-    geom_point(size=2, aes(y = Heating_Capacity), color="red") +
-    geom_point(size=2, aes(y = Heating_Load), color="blue") +
-    scale_color_manual(values=c("red","blue")) +
-    labs(title=paste0("Heating Capacity/Heating Load vs. Outdoor Air Temperature for Site ",site),
-         x="Outdoor Temperature (F)",
-         y="Load and Capcity (Btu/h)") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank(),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
-}
-# HeatCapacityOAT("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
-
-
 # Heating capacity (Btu/h) and heating load with outdoor air temperature as timeseries
 HeatCapacityTimeSeries <- function(site, interval, timestart, timeend){
   df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
@@ -577,147 +586,6 @@ HeatCapacityTimeSeries <- function(site, interval, timestart, timeend){
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 # HeatCapacityTimeSeries("6950NE", 5, "12/01/2022 00:00", "12/30/2022 00:00")
-
-
-
-# COP vs outdoor air temperature, hourly averages
-  # The powerpoint has this grouped by stage (low, medium, high) as well.
-  # I'm not sure how we will get the stage of operation.
-      # VM: These should all be continously varying units, so we shouldn't have to worry about stages.
-Heat_COP <- function(site, timestart, timeend){
-  df %>%     
-    filter(Site_ID %in% site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
-             OA_TempF <= 55) %>%
-    group_by(Site_ID, temp_int = cut(OA_TempF,
-                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
-    summarize(COP = mean(COP_Heating, na.rm=T)) %>%
-  ggplot(aes(x = temp_int, y = COP, color = as.character(Site_ID), group=Site_ID)) + 
-    geom_line(size = 1) +
-    geom_point(size=2) +
-    labs(title="Heating COP vs. Outdoor Air Temperature",
-         x="Outdoor Temperature (F)",
-         y="COP",
-         color = "Site") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-}
-# Heat_COP("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
-
-
-## Need to figure out how to do staging charts and defrost mode run time chart
-  # There should be a flag for defrost mode
-  # Staging will have to be determined based on power consumption
-
-# Supplemental resistance heat use compared to total energy use by temperature bin
-  # Using 5 degree F intervals like the graph in the powerpoint
-AuxHeatUse <- function(site, timestart, timeend){
-  df %>%     
-    filter(Site_ID %in% site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
-             OA_TempF <= 55) %>%
-    group_by(Site_ID, temp_int = cut(OA_TempF,
-                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
-    summarize(SuppHeat = mean(Aux_Power / (AHU_Power + HP_Power), na.rm=T)) %>%
-    filter(!is.na(temp_int)) %>%
-    ggplot(aes(x = temp_int, y = SuppHeat, color = as.character(Site_ID), group = Site_ID)) + 
-    geom_line(size = 1) +
-    geom_point(size = 2) +
-    labs(title="Supplement Heat Energy Ratio per Outdoor Temperature Bin",
-         x="Outdoor Temperature (F)",
-         y="Ratio of Supplemental Heat to Total Heat Energy (%)",
-         color = "Site") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-  
-}
-# AuxHeatUse("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
-
-
-# Heat pump return and supply temperature for outdoor temperature bins
-SupplyReturnTemp <- function(site, timestart, timeend){
-  df %>%     
-    filter(Site_ID %in% site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
-             OA_TempF <= 55) %>%
-    group_by(Site_ID, temp_int = cut(OA_TempF, breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
-    summarize(SupplyTemp = mean(SA_TempF, na.rm=T),
-              ReturnTemp = mean(RA_TempF, na.rm=T)) %>%
-    filter(!is.na(temp_int)) %>%
-    ggplot(aes(x = temp_int, color = Site_ID)) + 
-    geom_line(size = 1, aes(y = SupplyTemp, linetype="Supply Temperature", group=Site_ID)) +
-    geom_line(size = 1, aes(y = ReturnTemp, linetype="Return Temperature", group=Site_ID)) +
-    geom_point(size=2, aes(y = SupplyTemp), linetype="solid") +
-    geom_point(size=2, aes(y = ReturnTemp), linetype="dashed") +
-    scale_linetype_manual(values=c("dashed","solid")) +
-    labs(title="Supply and Return Temperature per Outdoor Temperature Bin",
-         x="Outdoor Temperature Bin (F)",
-         y="Indoor Temperature (F)") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank(),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-  
-}
-SupplyReturnTemp(c("6950NE","8220XE","4228VB"), "12/01/2022 00:00", "12/30/2022 00:00")
-
-
-
-# Electricity usage vs. outdoor temperature
-  # The graph in the powerpoint has it grouped into 3-month intervals, but I'm
-  # trying one day intervals for now because our timeframe isn't as long
-  # only one site can be entered at a time
-ElecUsage <- function(site, timestart, timeend){
-  tempdf <- df %>%     
-    filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    group_by(date) %>% 
-    summarize(AirTemp = mean(OA_TempF, na.rm=T),
-              ElecUse = sum(Energy_kWh, na.rm=T))
-  
-  # Create transformation factor for secondary axis
-    # Complicated because there can be positive and negative values for temp
-  scale_factor <- (max(tempdf$ElecUse, na.rm=T) - min(tempdf$ElecUse, na.rm=T))/
-    (max(tempdf$AirTemp, na.rm=T) - min(tempdf$AirTemp, na.rm=T))
-  adj <- max(tempdf$ElecUse / scale_factor, na.rm=T) - max(tempdf$AirTemp, na.rm=T)
-  
-  ggplot(tempdf, aes(x = date)) + 
-    geom_line(size = 1, aes(y = ElecUse / scale_factor - adj, color="Electricity Usage")) +
-    geom_line(size = 1, aes(y = AirTemp, color="Average Outdoor Temperature")) +
-    geom_point(size=2, aes(y = ElecUse / scale_factor - adj), color="black") +
-    geom_point(size=2, aes(y = AirTemp), color="red") +
-    scale_color_manual(values=c("red","black")) +
-    scale_y_continuous(name = "Outdoor Temperature (F)",
-                       sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (kWh)")) +
-    labs(title=paste0("Electricity Usage vs Outdoor Temperature for Site ",site),
-         x="") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank(),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-  
-}
-# ElecUsage("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
-
-
 
 
 # Percent of time that heat pump and aux heat are running as timeseries
@@ -789,6 +657,182 @@ RunTimesTimeSeries <- function(site, timestart, timeend){
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 # RunTimesTimeSeries("6950NE", "12/01/2022 00:00", "12/31/2022 00:00")
+
+
+
+
+
+
+### Outdoor Air Bin Graphs ----
+
+# Heating capacity (Btu/h) vs outdoor air temperature
+  # Only can select one site for this function
+HeatCapacityOAT <- function(site, timestart, timeend){
+  df %>%
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
+             OA_TempF <= 55) %>%
+    group_by(temp_int = cut(OA_TempF,
+                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
+    filter(!is.na(temp_int)) %>%
+    summarize(Heating_Capacity = mean(Heating_Capacity_Btu_h, na.rm=T),
+              Heating_Load = mean(Heating_Load_Btu_h, na.rm=T),
+              Outdoor_Temp = mean(OA_TempF)) %>%
+    ggplot(aes(x = temp_int)) + 
+    geom_line(size = 1, aes(y = Heating_Capacity, color="Heating Capacity", group=1)) +
+    geom_line(size = 1, aes(y = Heating_Load, color="Heating Load", group=1)) +
+    geom_point(size=2, aes(y = Heating_Capacity), color="red") +
+    geom_point(size=2, aes(y = Heating_Load), color="blue") +
+    scale_color_manual(values=c("red","blue")) +
+    labs(title=paste0("Heating Capacity/Heating Load vs. Outdoor Air Temperature for Site ",site),
+         x="Outdoor Temperature (F)",
+         y="Load and Capcity (Btu/h)") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+}
+# HeatCapacityOAT("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
+
+
+
+# COP vs outdoor air temperature, hourly averages
+Heat_COP <- function(site, timestart, timeend){
+  df %>%     
+    filter(Site_ID %in% site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
+             OA_TempF <= 55) %>%
+    group_by(Site_ID, temp_int = cut(OA_TempF,
+                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
+    summarize(COP = mean(COP_Heating, na.rm=T)) %>%
+  ggplot(aes(x = temp_int, y = COP, color = as.character(Site_ID), group=Site_ID)) + 
+    geom_line(size = 1) +
+    geom_point(size=2) +
+    labs(title="Heating COP vs. Outdoor Air Temperature",
+         x="Outdoor Temperature (F)",
+         y="COP",
+         color = "Site") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+}
+# Heat_COP("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
+
+
+
+# Supplemental resistance heat use compared to total energy use by temperature bin
+  # Using 5 degree F intervals like the graph in the powerpoint
+AuxHeatUse <- function(site, timestart, timeend){
+  df %>%     
+    filter(Site_ID %in% site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
+             OA_TempF <= 55) %>%
+    group_by(Site_ID, temp_int = cut(OA_TempF,
+                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
+    summarize(SuppHeat = mean(Aux_Power / (AHU_Power + HP_Power), na.rm=T)) %>%
+    filter(!is.na(temp_int)) %>%
+    ggplot(aes(x = temp_int, y = SuppHeat, color = as.character(Site_ID), group = Site_ID)) + 
+    geom_line(size = 1) +
+    geom_point(size = 2) +
+    labs(title="Supplement Heat Energy Ratio per Outdoor Temperature Bin",
+         x="Outdoor Temperature (F)",
+         y="Ratio of Supplemental Heat to Total Heat Energy (%)",
+         color = "Site") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+  
+}
+# AuxHeatUse("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
+
+
+# Heat pump return and supply temperature for outdoor temperature bins
+SupplyReturnTemp <- function(site, timestart, timeend){
+  df %>%     
+    filter(Site_ID %in% site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
+             OA_TempF <= 55) %>%
+    group_by(Site_ID, temp_int = cut(OA_TempF, breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
+    summarize(SupplyTemp = mean(SA_TempF, na.rm=T),
+              ReturnTemp = mean(RA_TempF, na.rm=T)) %>%
+    filter(!is.na(temp_int)) %>%
+    ggplot(aes(x = temp_int, color = Site_ID)) + 
+    geom_line(size = 1, aes(y = SupplyTemp, linetype="Supply Temperature", group=Site_ID)) +
+    geom_line(size = 1, aes(y = ReturnTemp, linetype="Return Temperature", group=Site_ID)) +
+    geom_point(size=2, aes(y = SupplyTemp), linetype="solid") +
+    geom_point(size=2, aes(y = ReturnTemp), linetype="dashed") +
+    scale_linetype_manual(values=c("dashed","solid")) +
+    labs(title="Supply and Return Temperature per Outdoor Temperature Bin",
+         x="Outdoor Temperature Bin (F)",
+         y="Indoor Temperature (F)") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+  
+}
+# SupplyReturnTemp(c("6950NE","8220XE","4228VB"), "12/01/2022 00:00", "12/30/2022 00:00")
+
+
+
+# Electricity usage vs. outdoor temperature
+  # The graph in the powerpoint has it grouped into 3-month intervals, but I'm
+  # trying one day intervals for now because our timeframe isn't as long
+  # only one site can be entered at a time
+ElecUsage <- function(site, timestart, timeend){
+  tempdf <- df %>%     
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
+    group_by(date) %>% 
+    summarize(AirTemp = mean(OA_TempF, na.rm=T),
+              ElecUse = sum(Energy_kWh, na.rm=T))
+  
+  # Create transformation factor for secondary axis
+    # Complicated because there can be positive and negative values for temp
+  scale_factor <- (max(tempdf$ElecUse, na.rm=T) - min(tempdf$ElecUse, na.rm=T))/
+    (max(tempdf$AirTemp, na.rm=T) - min(tempdf$AirTemp, na.rm=T))
+  adj <- max(tempdf$ElecUse / scale_factor, na.rm=T) - max(tempdf$AirTemp, na.rm=T)
+  
+  ggplot(tempdf, aes(x = date)) + 
+    geom_line(size = 1, aes(y = ElecUse / scale_factor - adj, color="Electricity Usage")) +
+    geom_line(size = 1, aes(y = AirTemp, color="Average Outdoor Temperature")) +
+    geom_point(size=2, aes(y = ElecUse / scale_factor - adj), color="black") +
+    geom_point(size=2, aes(y = AirTemp), color="red") +
+    scale_color_manual(values=c("red","black")) +
+    scale_y_continuous(name = "Outdoor Temperature (F)",
+                       sec.axis = sec_axis(~(. + adj)*scale_factor, name ="Electricity Use (kWh)")) +
+    labs(title=paste0("Electricity Usage vs Outdoor Temperature for Site ",site),
+         x="") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+  
+}
+# ElecUsage("6950NE", "12/01/2022 00:00", "12/30/2022 00:00")
+
+
+
+
 
 
 
