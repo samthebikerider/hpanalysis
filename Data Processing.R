@@ -12,41 +12,106 @@ wd <- "C:/Users/keen930/PNNL/CCHP - General/Field Demonstration (Task 2)/R Data 
 wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/General/Field Demonstration (Task 2)/R Data Analysis"
 
 # Read data
-# read_plus <- function(file) {read_csv(file) %>% mutate(filename=file)}
-# df <- list.files(path = paste0(wd, "/Raw Data"),pattern="*.csv", full.names=T) %>% 
-  # map_df(~read_csv(.))
-
-  # Read_csv (tidyverse) is crashing RStudio, trying fread (data.table) which is supposed to be better with large files
+  # Read_csv (tidyverse) is crashing RStudio, trying fread (data.table) which is 
+  # supposed to be better with large files
 library(data.table)
 read_plus <- function(file) {fread(file) %>% mutate(filename=file)}
-df <- list.files(path = paste0(wd, "/Raw Data"),pattern="*.csv", full.names=T) %>% 
+
+# Read Michaels/E350 data separately
+df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
   map_df(~read_plus(.)) %>% 
   # Modify filename so that it is the Site ID
   mutate(Site_ID = substr(filename, nchar(filename)-13,nchar(filename)-8)) %>%
   as.data.frame()
 
+  # E350 data read one-minute and one-second data separately
+df_e350_min <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Minute"),pattern="*.csv", full.names=T) %>% 
+  map_df(~read_plus(.)) %>% 
+  # Modify filename so that it is the Site ID
+  mutate(Site_ID = substr(filename, 111, 116)) %>%
+  as.data.frame()
+df_e350_sec <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Second"),pattern="*.csv", full.names=T) %>% 
+  map_df(~read_plus(.)) %>% 
+  # Modify filename so that it is the Site ID
+  mutate(Site_ID = substr(filename, 111, 116)) %>%
+  as.data.frame()
 
 
+# Metadata file to append time zone and other characteristics
 metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 
 
 # Convert timestamp from UTC to local time zone
-  # Confirm if data will be in local time or UTC (may vary for each site) 
-    # VM: Michaels sites are coming in UTC
+  # Michaels sites are coming in UTC, E350 data is in local time zone
+  # I think the best solution is to convert all to UTC so that there aren't any
+  # issues binding the data that is stored in multiple timezones.
   # I added a field to the meta data ("Timezone") which will have the local timezone
   # for each site.
-  # I tried to do this without creating so many temporary variables, but the "tz"
-  # variable in strptime doesn't let me do dynamic inputs with multiple sites in one df
-  # KK: It looks like data.table automatically converted the timestamp to POSIXct, so just need to change TZ now
-temp <- df[0,] %>% mutate(Timestamp = NA)
+
+# Michaels data
+  # data.table automatically converted the timestamp to POSIXct, so just need to change TZ now
+temp <- df_michaels[0,] %>% mutate(Timestamp = NA)
 for (id in metadata$Site_ID){
-  sub <- df %>% filter(Site_ID == id)
-  # sub$Timestamp = strptime(substr(sub$index,1,19), tz=metadata$Timezone[metadata$Site_ID==id],"%Y-%m-%d %H:%M:%S")
-  sub$Timestamp = sub$index %>% with_tz(tzone = metadata$Timezone[metadata$Site_ID==id])
+  sub <- df_michaels %>% filter(Site_ID == id)
+  sub$Timestamp = sub$index #%>% with_tz(tzone = metadata$Timezone[metadata$Site_ID==id]) Don't convert to local time, keep as UTC
   temp <- rbind(temp, sub)
 }
-df <- temp %>% arrange(Site_ID, Timestamp)
+df_michaels <- temp %>% arrange(Site_ID, Timestamp)
+
+# Energy 350 data (1-minute)
+temp <- df_e350_min[0,]
+for (id in metadata$Site_ID){
+  sub <- df_e350_min %>% filter(Site_ID == id)
+  sub$Timestamp = as.POSIXct(strptime(sub$Timestamp, tz="UTC","%m/%d/%Y %H:%M"))
+  temp <- rbind(temp, sub)
+}
+df_e350_min <- temp %>% arrange(Site_ID, Timestamp)
+
+temp <- df_e350_sec[0,]
+for (id in metadata$Site_ID){
+  sub <- df_e350_sec %>% filter(Site_ID == id)
+  sub$Timestamp = as.POSIXct(strptime(sub$Timestamp, tz="UTC","%m/%d/%Y %H:%M:%S")) %>%
+    with_tz(tzone="UTC")
+  temp <- rbind(temp, sub)
+}
+df_e350_sec <- temp %>% arrange(Site_ID, Timestamp)
 rm(temp, sub, id)
+
+
+# Operating mode
+  # For Michaels/Lennox, 0V indicates heating mode and 2.7-3.0V indicates cooling mode,
+  # but defrost is also cooling and needs to be separated. Because, if it is in 
+  # defrost mode, we don't want to be calculating cooling capacity, we want that
+  # to count against the heating capacity, I would think. So, I'm making
+  # three modes: heating, cooling, and defrost for accurately pinpoint 
+  # what the operation is, using outdoor air temperature to help.
+  # For Energy350: DC Voltage signal to heat pump reversing valve. +1.5 should 
+  # equal no signal. A -12V pulse (900 ms) is expected for cooling signal and a 
+  # +3V pulse (900 ms) is expected for heating signal.
+df_michaels <- df_michaels %>% mutate(
+  Operating_Mode = ifelse(RV_Volts < 0.1, "Heating",
+                          ifelse(OA_TempF < 40, "Defrost",
+                                 "Cooling")))
+# Second-level data does not have outdoor air temperature... Only calculate for 
+  # minute-level data for now
+df_e350_min <- df_e350_min %>% mutate(
+  Operating_Mode = ifelse(`ReversingValveSignal [V]` > 2.5, "Heating",
+                          ifelse(`ReversingValveSignal [V]` < -10 & `OA_Temp [°F]` < 40, "Defrost",
+                                 ifelse(`ReversingValveSignal [V]` < -10, "Cooling",
+                                        NA))))
+
+
+
+
+## Bind dataframes together into one
+df <- rbind(
+  df_e350_min %>% 
+    rename()
+    select(Timestamp, `ReversingValveSignal [V]`, HP) %>%
+    rename()
+)
+
+rm(df_e350_min, df_e350_sec, df_michaels)
 
 # Add fields for date, hour, and week day
 df <- df %>% mutate(
@@ -100,23 +165,12 @@ fan_power_curve <- function(fan_power, siteid){
                       ifelse(siteid=="8220XE",
                              152.27 * (fan_power*1000) ^ 0.3812,
                              ifelse(siteid=="4228VB",
-                                    152.27 * (fan_power*1000) ^ 0.3812,  ## Temporary until we get curve from E350
+                                    1647.7 * fan_power^0.394,
                                     NA)))
 }
 df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
 
-  # Operating mode
-    # For Lennox, 0V indicates heating mode and 2.7-3.0V indicates cooling mode,
-    # but defrost is also cooling and needs to be separated. Because, if it is in 
-    # defrost mode, we don't want to be calculating cooling capacity, we want that
-    # to count against the heating capacity, I would think. So, I'm making
-    # three modes: heating, cooling, and defrost for accurately pinpoint 
-    # what the operation is, using outdoor air temperature to help.
-df <- df %>% mutate(
-  Operating_Mode = ifelse(RV_Volts < 0.1, "Heating",
-                          ifelse(OA_TempF < 40, "Defrost",
-                                 "Cooling")))
 
   # Auxiliary power
     # Is it just "Power" or the sum of "Power" and "Power."?
