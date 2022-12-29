@@ -163,8 +163,8 @@ df <- rbind(
     select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
            RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
-           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH)) %>%
-  mutate(Room4_TempF = NA, Room4_RH = NA)
+           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode) %>%
+    mutate(Room4_TempF = NA, Room4_RH = NA))
 
 rm(df_michaels, df_e350)
 
@@ -258,10 +258,6 @@ df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$Total_Power)
 
   # Heat Pump Heating capacity (Q-heating)
     # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
-    # Renaming to Heat Output, because above the balance point the system will not
-    # be running at full capacity.
-    # Need to think about how to calculate Heating Capacity -- perhaps only taking
-    # times when the heat pump is at full power.
 df <- df %>% mutate(
   Heating_Capacity_Btu_h = ifelse(
   Operating_Mode == "Cooling", NA,
@@ -280,7 +276,6 @@ df <- df %>% mutate(
 
   # Cooling capacity (Q-cooling)
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
-        # VM: This will yield -ve values which is what we want here but something to bear in mind during COP calcs.
 df <- df %>% mutate(
   Cooling_Capacity_Btu_h = ifelse(
   Operating_Mode == "Heating"|Operating_Mode=="Defrost", NA,
@@ -503,40 +498,6 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
 }
 # SupplyTempTimeSeries("8220XE", 5, "12/14/2022 00:00", "12/15/2022 00:00")
 #6950NE
-
-# Four aux sensor time series comparison chart
-AuxTimeSeries <- function(site, interval, timestart, timeend){
-  # Look at a time series graph for the four supply temperature monitors, time interval (e.g, 5-minute), time period, and site
-  # Interval is in units of minutes, and so the maximum interval would be one hour.
-  # The time start and end should be a date string in format for example "4/01/2022".
-  df %>% mutate(Interval = minute(Timestamp) %/% interval) %>% 
-    filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    group_by(Site_ID,date, hour, Interval) %>% 
-    summarize(Timestamp = Timestamp[1],
-              Aux1_Power = mean(Aux1_Power,na.rm=T),
-              Aux2_Power = mean(Aux2_Power,na.rm=T),
-              Aux3_Power = mean(Aux3_Power,na.rm=T),
-              Aux4_Power = mean(Aux4_Power,na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=Aux1_Power, color = "Aux1"),size=0.3) + 
-    geom_line(aes(y=Aux2_Power, color = "Aux2"),size=0.3) + 
-    geom_line(aes(y=Aux3_Power, color = "Aux3"),size=0.3) + 
-    geom_line(aes(y=Aux4_Power, color = "Aux4"),size=0.3) + 
-    scale_y_continuous(breaks = seq(0,50, by=1)) +
-    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")) +
-    labs(title=paste0("Auxiliary power by leg time series plot for site ", site),x="",y="Power (kW)") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
-    guides(color=guide_legend(override.aes=list(size=3)))
-}
-# AuxTimeSeries("8220XE", 5, "12/17/2022 00:00", "12/18/2022 00:00")
 
 
 
@@ -942,7 +903,6 @@ for (id in metadata$Site_ID){
   
   temp_time_series <- TempTimeSeries(id, 5, timestart, timeend)
   supply_temp_time_series <- SupplyTempTimeSeries(id, 5, timestart, timeend)
-  aux_heat_time_series <- AuxTimeSeries(id, 5, timestart, timeend)
   power_time_series_oat <- PowerTimeSeriesOAT(id, 5, timestart, timeend)
   power_time_series_sa <- PowerTimeSeriesSA(id, 5, timestart, timeend)
   reverse_valve_time_series <- RevValveTimeSeries(id, 5, timestart, timeend)
@@ -954,7 +914,6 @@ for (id in metadata$Site_ID){
   
   ggsave('Temperature_TimeSeries.png', plot=temp_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Supply_Temperature_TimeSeries.png', plot=supply_temp_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-  ggsave('Aux_Heat_TimeSeries.png', plot=aux_heat_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Power_TimeSeries_OAT.png', plot=power_time_series_oat, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Power_TimeSeries_SA.png', plot=power_time_series_sa, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Reverse_Valve_TimeSeries.png', plot=reverse_valve_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
