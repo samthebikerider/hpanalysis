@@ -53,7 +53,7 @@ metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 temp <- df_michaels[0,] %>% mutate(Timestamp = NA)
 for (id in metadata$Site_ID){
   sub <- df_michaels %>% filter(Site_ID == id)
-  sub$Timestamp = sub$index #%>% with_tz(tzone = metadata$Timezone[metadata$Site_ID==id]) Don't convert to local time, keep as UTC
+  sub$Timestamp = sub$index %>% force_tz(tzone = "UTC")
   temp <- rbind(temp, sub)
 }
 df_michaels <- temp %>% arrange(Site_ID, Timestamp)
@@ -65,7 +65,7 @@ for (id in metadata$Site_ID){
   sub$Timestamp = as.POSIXct(strptime(sub$Timestamp, tz="UTC","%m/%d/%Y %H:%M"))
   temp <- rbind(temp, sub)
 }
-df_e350_min <- temp %>% arrange(Site_ID, Timestamp)
+df_e350_min <- temp
 
 temp <- df_e350_sec[0,]
 for (id in metadata$Site_ID){
@@ -74,8 +74,59 @@ for (id in metadata$Site_ID){
     with_tz(tzone="UTC")
   temp <- rbind(temp, sub)
 }
-df_e350_sec <- temp %>% arrange(Site_ID, Timestamp)
+df_e350_sec <- temp
 rm(temp, sub, id)
+
+
+
+## Bind dataframes together into one
+df_e350 <- rbind(
+  # Mintue-level data
+  df_e350_min %>% 
+    rename(RV_Volts=`ReversingValveSignal [V]`,
+           HP_Power=`HP_Power [kW]`,
+           Fan_Power=`Fan_Power [kW]`,
+           AHU_Power=`AHU_Power [kW]`,
+           Aux_Power=`AuxHeat_Power [kW]`,
+           OA_TempF=`OA_Temp [°F]`,
+           OA_RH=`OA_RH [%]`,
+           SA1_TempF=`SA_Duct1_Temp [°F]`,
+           SA2_TempF=`SA_Duct2_Temp [°F]`,
+           SA1_RH=`SA_Duct1_RH [%]`,
+           SA2_RH=`SA_Duct2_RH [%]`,
+           RA_TempF=`RA_Temp [°F]`,
+           RA_RH=`RA_RH [%]`,
+           AHU_TempF=`AHU_Ambient_Temp [°F]`,
+           AHU_RH=`AHU_RH [%]`,
+           Room1_TempF=`Room1_Temp [°F]`,
+           Room1_RH=`Room1_RH [%]`,
+           Room2_TempF=`Room2_Temp [°F]`,
+           Room2_RH=`Room2_RH [%]`,
+           Room3_TempF=`Room3_Temp [°F]`,
+           Room3_RH=`Room3_RH [%]`,
+           Room4_TempF=`Room4_Temp [°F]`,
+           Room4_RH=`Room4_RH [%]`) %>%
+    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
+           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
+           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
+           Room3_TempF, Room3_RH, Room4_TempF, Room4_RH) %>%
+    mutate(SA3_TempF=NA, SA3_RH=NA, SA4_TempF=NA, SA4_RH=NA),
+  # Second-level data
+  df_e350_sec %>%
+    filter(second(Timestamp) != 0) %>%    # Remove 0 second times to avoid duplicates from minute data
+    rename(RV_Volts=`Reversing_Valve_Signal [VDC]`,
+           HP_Power=`HP_Power [kW]`,
+           Fan_Power=`FanPower [kW]`,
+           AHU_Power=`AHU_Power [kW]`,
+           Aux_Power=`Aux_Heat_Power [kW]`) %>%
+    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power) %>%
+    mutate(OA_TempF=NA, OA_RH=NA, SA1_TempF=NA, SA2_TempF=NA, SA1_RH=NA, SA2_RH=NA, 
+           RA_TempF=NA, RA_RH=NA, AHU_TempF=NA, AHU_RH=NA, Room1_TempF=NA, Room1_RH=NA, 
+           Room2_TempF=NA, Room2_RH=NA, Room3_TempF=NA, Room3_RH=NA, Room4_TempF=NA, 
+           Room4_RH=NA, SA3_TempF=NA, SA3_RH=NA, SA4_TempF=NA, SA4_RH=NA)) %>% 
+  arrange(Site_ID, Timestamp)
+
+rm(df_e350_min, df_e350_sec)
 
 
 # Operating mode
@@ -85,33 +136,38 @@ rm(temp, sub, id)
   # to count against the heating capacity, I would think. So, I'm making
   # three modes: heating, cooling, and defrost for accurately pinpoint 
   # what the operation is, using outdoor air temperature to help.
+  
   # For Energy350: DC Voltage signal to heat pump reversing valve. +1.5 should 
   # equal no signal. A -12V pulse (900 ms) is expected for cooling signal and a 
   # +3V pulse (900 ms) is expected for heating signal.
+  # We only have OAT at 1-minute interval, so there will be many NA values. Heating
+  # capacity will be the same because SA and RA temperature.
 df_michaels <- df_michaels %>% mutate(
   Operating_Mode = ifelse(RV_Volts < 0.1, "Heating",
                           ifelse(OA_TempF < 40, "Defrost",
                                  "Cooling")))
-# Second-level data does not have outdoor air temperature... Only calculate for 
-  # minute-level data for now
-df_e350_min <- df_e350_min %>% mutate(
-  Operating_Mode = ifelse(`ReversingValveSignal [V]` > 2.5, "Heating",
-                          ifelse(`ReversingValveSignal [V]` < -10 & `OA_Temp [°F]` < 40, "Defrost",
-                                 ifelse(`ReversingValveSignal [V]` < -10, "Cooling",
+df_e350 <- df_e350 %>% mutate(
+  Operating_Mode = ifelse(RV_Volts > 2.5, "Heating",
+                          ifelse(RV_Volts < -10 & OA_TempF < 40, "Defrost",
+                                 ifelse(RV_Volts < -10, "Cooling",
                                         NA))))
 
+# Calculate Aux_Power for Michaels data (E350 is already calculated)
+df_michaels <- df_michaels %>% mutate(
+  Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T))
 
-
-
-## Bind dataframes together into one
+# Row bind e350 and Michaels data together
 df <- rbind(
-  df_e350_min %>% 
-    rename()
-    select(Timestamp, `ReversingValveSignal [V]`, HP) %>%
-    rename()
-)
+  df_e350,
+  df_michaels %>% 
+    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
+           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
+           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
+           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH)) %>%
+  mutate(Room4_TempF = NA, Room4_RH = NA)
 
-rm(df_e350_min, df_e350_sec, df_michaels)
+rm(df_michaels, df_e350)
+
 
 # Add fields for date, hour, and week day
 df <- df %>% mutate(
@@ -120,15 +176,6 @@ df <- df %>% mutate(
   day = wday(Timestamp))
 
 
-# Clean data
-  # Additional cleaning that will need to occur once we see raw data
-
-  # Be careful of missing kW data when converting to kWh
-    # Look into what others have done. Interpolation could be a solution.
-
-  # VM: I auggest doing a series of panel plots of the timeseries data 
-  # as well as BW plots for temp, and power from the raw data as a first step.
-  # We can look at these charts to determine acceptable ranges etc.
 
   # Supply temperature and humidity calculated as the average of the four quadrants
 df <- df %>% mutate(
@@ -172,11 +219,8 @@ df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
 
 
-  # Auxiliary power
-    # Is it just "Power" or the sum of "Power" and "Power."?
-df <- df %>% mutate(
-  Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T),
-  Total_Power = rowSums(cbind(AHU_Power, HP_Power), na.rm=T))
+  # Total power
+df$Total_Power = df$AHU_Power + df$HP_Power
 
 
   # Energy use
