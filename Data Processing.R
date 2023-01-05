@@ -113,30 +113,24 @@ rm(df_e350_min, df_e350_sec)
   # Assumes minute data (when seconds are zero) has temperature data and
   # second data is missing it.
   # Important that the data is sorted by site and then timestamp, which it should be.
-fillMissingTemp <- function(df){
-  sa1_temp = NA     # initialize temperatures
-  sa2_temp = NA
-  oa_temp = NA
-  ra_temp = NA
+fillMissingTemp <- function(time, temp){
+  t = NA # Initialize temperature counter
   
-  for(row in 1:nrow(df)){
-    if(second(df$Timestamp)==0){
+  for(row in 1:length(time)){
+    if(second(time[row])==0){
     # At the minute level, make a record of the temperatures
-      sa1_temp = df$SA1_TempF[row]
-      sa2_temp = df$SA2_TempF[row]
-      oa_temp = df$OA_TempF[row]
-      ra_temp = df$RA_TempF[row]
+      t = temp[row]
     } else {
     # And for all other data, record as the stored value
-      df$SA1_TempF[row] = sa1_temp
-      df$SA2_TempF[row] = sa2_temp
-      df$OA_TempF[row] = oa_temp
-      df$RA_TempF[row] = ra_temp
+      temp[row] = t
     }
   }
+  temp
 }
-df_e350 <- fillMissingTemp(df_e350)
-
+df_e350$SA1_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA1_TempF)
+df_e350$SA2_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA2_TempF)
+df_e350$OA_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$OA_TempF)
+df_e350$RA_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$RA_TempF)
 
 # Operating mode
   # For Michaels/Lennox, 0V indicates heating mode and 2.7-3.0V indicates cooling mode,
@@ -152,14 +146,18 @@ df_e350 <- fillMissingTemp(df_e350)
   # We only have OAT at 1-minute interval, so there will be many NA values. Heating
   # capacity will be the same because SA and RA temperature.
 df_michaels <- df_michaels %>% mutate(
-  Operating_Mode = ifelse(RV_Volts < 0.1, "Heating",
-                          ifelse(OA_TempF < 40, "Defrost",
-                                 "Cooling")))
+  Operating_Mode = ifelse(HP_Power < 0.01 & OA_TempF < 45, "Heating-Off",
+                          ifelse(RV_Volts < 0.1, "Heating",
+                            ifelse(OA_TempF < 45, "Defrost",
+                              ifelse(HP_Power < 0.01, "Cooling-Off",
+                                   "Cooling")))))
 df_e350 <- df_e350 %>% mutate(
-  Operating_Mode = ifelse(RV_Volts > 2.5, "Heating",
-                          ifelse(RV_Volts < -10 & OA_TempF < 40, "Defrost",
-                                 ifelse(RV_Volts < -10, "Cooling",
-                                        NA))))
+  Operating_Mode = ifelse(HP_Power < 0.01 & OA_TempF <45, "Heating-Off",
+                          ifelse(RV_Volts > 2.5, "Heating",
+                            ifelse(RV_Volts < -10 & OA_TempF < 40, "Defrost",
+                              ifelse(RV_Volts < -10 & HP_Power < 0.01, "Cooling-Off",
+                                ifelse(RV_Volts < -10, "Cooling",
+                                    NA))))))
 
 # Calculate Aux_Power for Michaels data (E350 is already calculated)
 df_michaels <- df_michaels %>% mutate(
@@ -173,7 +171,7 @@ df <- rbind(
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
            RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
            Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode) %>%
-    mutate(Room4_TempF = NA, Room4_RH = NA))
+    mutate(Room4_TempF = NA, Room4_RH = NA)) %>% arrange(Site_ID, Timestamp)
 
 rm(df_michaels, df_e350)
 
@@ -226,12 +224,7 @@ fan_power_curve <- function(fan_power, siteid){
 }
 df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
-  # Measured power rating of heat pump 
-    # Used for heat capacity calculations
-df <- df %>% merge(metadata %>% select(Site_ID, HP_Measured_Size_kW),
-                   by="Site_ID", all.x=T, all.y=F)
-
-
+ 
   # Total power
 df$Total_Power = df$AHU_Power + df$HP_Power
 
@@ -281,6 +274,16 @@ df <- df %>% mutate(
     # Electric resistance heating is expected to have one unit of power in to one unit of heat output
   Aux_Heat_Output_Btu_h = Aux_Power * 3412,
 
+  # Cooling output
+    # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
+  HP_Cool_Output_Btu_h = ifelse(
+    Operating_Mode == "Heating", NA,
+      0.0765 *                                                          # Density of air at 15C (lb/ft3)
+      supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
+      (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
+      (SA_TempF - RA_TempF) /
+      (1 + Supply_Humidity_Ratio)),
+  
   # Heating load
   Heating_Load_Btu_h = ifelse(
     Operating_Mode == "Cooling", NA,
@@ -292,36 +295,36 @@ df <- df %>% mutate(
     (AHU_Power + HP_Power) * 3412),                           # Convert total system power from kW to Btu/hr
 
 
-  # Heat Pump Heating capacity (Q-heating)
-    # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
-    # Capacity should only include when HP is at full (or near full) power or in defrost mode
-    # This is challenging because the systems that modulate more may not spend much time
-    # At full power, and so we may not enough data at every temperature bin.
-    # Also, I think this could show it as running a disproportionately amount of time
-    # in defrost mode if we are ignoring times with partial HP power and show the 
-    # heating capacity as less than it should be.
-  HP_Heating_Capacity_Btu_h = ifelse(
-    # Make NA if in cooling mode or in heating mode and less that measured power rating
-    Operating_Mode=="Cooling" | (Operating_Mode=="Heating" & HP_Power < HP_Measured_Size_kW), NA,
-      # Otherwise at full power or in defrost mode, which will show as negative capacity
-      0.0765 *                                                # Density of air at 15C (lb/ft3)
-      supply_flow_rate_CFM * 60 *                             # CFM * min/hour
-      (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
-      (SA_TempF - RA_TempF) -                                 # Temperature delta
-    Aux_Power * 3412),                                        # Subtract auxiliary power, convert kW to btu/hr
+  # # Heat Pump Heating capacity (Q-heating)
+  #   # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
+  #   # Capacity should only include when HP is at full (or near full) power or in defrost mode
+  #   # This is challenging because the systems that modulate more may not spend much time
+  #   # At full power, and so we may not enough data at every temperature bin.
+  #   # Also, I think this could show it as running a disproportionately amount of time
+  #   # in defrost mode if we are ignoring times with partial HP power and show the 
+  #   # heating capacity as less than it should be.
+  # HP_Heating_Capacity_Btu_h = ifelse(
+  #   # Make NA if in cooling mode or in heating mode and less that measured power rating
+  #   Operating_Mode=="Cooling" | (Operating_Mode=="Heating" & HP_Power < HP_Measured_Size_kW), NA,
+  #     # Otherwise at full power or in defrost mode, which will show as negative capacity
+  #     0.0765 *                                                # Density of air at 15C (lb/ft3)
+  #     supply_flow_rate_CFM * 60 *                             # CFM * min/hour
+  #     (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
+  #     (SA_TempF - RA_TempF) -                                 # Temperature delta
+  #   Aux_Power * 3412),                                        # Subtract auxiliary power, convert kW to btu/hr
 
 
-  # Cooling capacity (Q-cooling)
-    # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
-    # Once we have data in cooling mode, need to confirm if the HP measured size for
-    # cooling is the same as for heating
-  HP_Cooling_Capacity_Btu_h = ifelse(
-    Operating_Mode == "Heating" | Operating_Mode=="Defrost" | HP_Power < HP_Measured_Size_kW, NA,
-      0.0765 *                                                          # Density of air at 15C (lb/ft3)
-      supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
-      (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
-      (SA_TempF - RA_TempF) /
-      (1 + Supply_Humidity_Ratio)),
+  # # Cooling capacity (Q-cooling)
+  #   # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
+  #   # Once we have data in cooling mode, need to confirm if the HP measured size for
+  #   # cooling is the same as for heating
+  # HP_Cooling_Capacity_Btu_h = ifelse(
+  #   Operating_Mode == "Heating" | Operating_Mode=="Defrost" | HP_Power < HP_Measured_Size_kW, NA,
+  #     0.0765 *                                                          # Density of air at 15C (lb/ft3)
+  #     supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
+  #     (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
+  #     (SA_TempF - RA_TempF) /
+  #     (1 + Supply_Humidity_Ratio)),
 
 
   # COP heating
@@ -329,51 +332,37 @@ df <- df %>% mutate(
     # I personally think that supplemental heat should not be part of the COP
     # but we need to align this with the challenge spec.
     # KK: Right now heating capacity subtracts auxiliary heat component.
-  HP_COP_Heating = HP_Heating_Capacity_Btu_h / 
+  HP_COP_Heating = HP_Heat_Output_Btu_h / 
     Heating_Load_Btu_h,
 
 # COP cooling
-  HP_COP_Cooling = (-1 * HP_Cooling_Capacity_Btu_h) / 
+  HP_COP_Cooling = (-1 * HP_Cool_Output_Btu_h) / 
     Cooling_Load_Btu_h)
 
 
 # Calculate heat and defrost run cycle duration for heat pump
-  # Note that the system could be in "heating mode" but the heat pump is turned off.
-  # This is helpful for calculating heating load, but we don't want to include
-  # when the heat pump is turned off in the run times.
 runCycleCalc <- function(site, timestamp, power, operate){
   
-  index <- which(operate == "Heating" & power > 0.1)[1]    # First row in heating mode with power
-  ts <- timestamp[index]                  # Timestamp at first non-NA row
-  cycle <- rep(NA, length(site))          # Initialize vector for cycle runtimes
-  ct <- site[index]                       # Initialize counter to detect new site
-  pwr <- TRUE                             # Tracker for when heat pump power is not zero and not in defrost mode
-  
+  index <- which(operate == "Heating")[1]    # First row in heating mode
+  ts <- timestamp[index]                     # Timestamp at first non-NA row
+  cycle <- rep(NA, length(site))             # Initialize vector for cycle runtimes
+  ct <- site[index]                          # Initialize counter to detect new site
+
   for(row in (index+1):length(site)){
 
-    if(is.na(operate[row])){
-      # If there is an NA value, skip to next row
-      next
-      
-    } else if(site[row] != ct){
+    if(site[row] != ct){
       # If there is a new site, do not calculate previous cycle
       ts <- timestamp[row]                   # Reset timestamp
       ct <- site[row]                        # Update record of site
 
-    } else if((power[row] < 0.1 | operate[row] != "Heating") & pwr){
-      # If the power is ~0 or enters defrost/cooling, calculate previous cycle
-        # Note that the power never goes complete to zero, so using 0.1 as threshold
-      cycle[row] <- difftime(timestamp[row], ts, units="mins")
-      pwr <- FALSE                           # Reset tracker
- 
-    } else if(pwr==FALSE){
-      # If the previous row was zero power/defrost mode, do not calculate cycle
-      if(power[row] > 0.1 & operate[row] == "Heating"){
-        # If the power is greater than zero and back in heating mode, reset cycle
-        pwr <- TRUE
-        ts <- timestamp[row]                   # Reset timestamp
-      }
-    
+    } else if(operate[row] != "Heating" & operate[row-1] == "Heating"){
+      # If the previous row was heating and this row is not heating,
+      # record runtime.
+      cycle[row-1] <- difftime(timestamp[row-1], ts, units="mins")
+      ts <- timestamp[row]                   # Reset timestamp
+      
+    } else if(operate[row] == "Heating" & operate[row-1] != "Heating"){
+      
     }
   }
   
@@ -386,24 +375,18 @@ defrostCycleCalc <- function(site, timestamp, operate){
   ts <- timestamp[index]                     # Timestamp at first defrost row
   cycle <- rep(NA, length(site))             # Initialize vector for cycle runtimes
   ct <- site[index]                          # Initialize counter to detect new site
-  df <- TRUE                                 # Tracking if previous row was defrost
 
   for(row in (index+1):length(site)){
     
-    if(is.na(operate[row])){
-      # If there is an NA value, skip to next row
-      next
-      
-    } else if(site[row] != ct){
+    if(site[row] != ct){
       # If there is a new site, do not calculate previous cycle
       ts <- timestamp[row]                   # Reset timestamp
       ct <- site[row]                        # Update record of site
       
-    } else if(operate[row] != "Defrost" & df){
-      # If the operating mode is not defrost but the previous row was
-      cycle[row] <- difftime(timestamp[row], ts, units="mins")
-      df <- FALSE                           # Reset tracker
-      
+    } else if(operate[row] != "Defrost" & operate[row-1] == "Defrost"){
+      # If the operating mode is not defrost but the previous row was defrost, record runtime.
+      cycle[row-1] <- difftime(timestamp[row-1], ts, units="mins")
+      ts <- timestamp[row]                   # Reset timestamp
     }
   }
   
@@ -412,7 +395,8 @@ defrostCycleCalc <- function(site, timestamp, operate){
 df$Heat_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$HP_Power, df$Operating_Mode)
 df$Defrost_Cycle_Runtimes <- defrostCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode)
 
-
+write.table(df %>% select(Site_ID, Timestamp, Operating_Mode, Heat_Cycle_Runtimes, Defrost_Cycle_Runtimes) %>% 
+              filter(Site_ID=="6950NE") %>% head(200000), file="clipboard-20000000000000000000",sep="\t",row.names = F)
 
 ### Diagnostic Tables ----
 
