@@ -340,63 +340,53 @@ df <- df %>% mutate(
     Cooling_Load_Btu_h)
 
 
-# Calculate heat and defrost run cycle duration for heat pump
-runCycleCalc <- function(site, timestamp, power, operate){
+# Calculate heat and defrost run cycle duration for heat pump.
+  # The "mode" input should be "Heating" or "Defrost".
+  # The script is set up to calculate EITHER heating run time or defrost runtime (or any other mode, e.g., cooling)
+runCycleCalc <- function(site, timestamp, operate, mode){
   
-  index <- which(operate == "Heating")[1]    # First row in heating mode
+  index <- which(operate == mode)[1]         # First row in heating/defrost mode
   ts <- timestamp[index]                     # Timestamp at first non-NA row
   cycle <- rep(NA, length(site))             # Initialize vector for cycle runtimes
   ct <- site[index]                          # Initialize counter to detect new site
-
+  track <- TRUE                              # Tracker for heating cycle
+  
   for(row in (index+1):length(site)){
 
     if(site[row] != ct){
-      # If there is a new site, do not calculate previous cycle
-      ts <- timestamp[row]                   # Reset timestamp
+      # If there is a new site, do not calculate previous cycle. Reset trackers
       ct <- site[row]                        # Update record of site
+      
+      if(operate[row] != mode | is.na(operate[row])){
+        track <- FALSE                       # Timestamp will be reset once it re-enters heat/defrost mode
+      } else {
+        ts <- timestamp[row]                 # Reset timestamp
+        track <- TRUE
+      }
 
-    } else if(operate[row] != "Heating" & operate[row-1] == "Heating"){
-      # If the previous row was heating and this row is not heating,
-      # record runtime.
+    } else if(is.na(operate[row])){
+      next     # Skip NA rows, I think this makes the most sense. 
+               # Other option is to end cycle if it was in heating before the NA.
+      
+    } else if(operate[row] != mode & track==TRUE){
+      # Heating/defrost cycle ends: If the previous row was heating/defrost and this row is not, record runtime.
       cycle[row-1] <- difftime(timestamp[row-1], ts, units="mins")
+      track <- FALSE
+      
+    } else if(operate[row] == mode & track == FALSE){
+      # Heating/defrost cycle begins: If the previous row was not heating/defrost and this row is, reset timestamp counter
       ts <- timestamp[row]                   # Reset timestamp
-      
-    } else if(operate[row] == "Heating" & operate[row-1] != "Heating"){
-      
+      track <- TRUE
     }
   }
   
   cycle    # Return cycle vector as output
 }
 
-defrostCycleCalc <- function(site, timestamp, operate){
-  
-  index <- which(operate == "Defrost")[1]    # First row in defrost mode
-  ts <- timestamp[index]                     # Timestamp at first defrost row
-  cycle <- rep(NA, length(site))             # Initialize vector for cycle runtimes
-  ct <- site[index]                          # Initialize counter to detect new site
+df$Heat_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Heating")
+df$Defrost_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Defrost")
 
-  for(row in (index+1):length(site)){
-    
-    if(site[row] != ct){
-      # If there is a new site, do not calculate previous cycle
-      ts <- timestamp[row]                   # Reset timestamp
-      ct <- site[row]                        # Update record of site
-      
-    } else if(operate[row] != "Defrost" & operate[row-1] == "Defrost"){
-      # If the operating mode is not defrost but the previous row was defrost, record runtime.
-      cycle[row-1] <- difftime(timestamp[row-1], ts, units="mins")
-      ts <- timestamp[row]                   # Reset timestamp
-    }
-  }
-  
-  cycle    # Return cycle vector as output
-}
-df$Heat_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$HP_Power, df$Operating_Mode)
-df$Defrost_Cycle_Runtimes <- defrostCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode)
 
-write.table(df %>% select(Site_ID, Timestamp, Operating_Mode, Heat_Cycle_Runtimes, Defrost_Cycle_Runtimes) %>% 
-              filter(Site_ID=="6950NE") %>% head(200000), file="clipboard-20000000000000000000",sep="\t",row.names = F)
 
 ### Diagnostic Tables ----
 
@@ -670,8 +660,8 @@ RevValveTimeSeries <- function(site, interval, timestart, timeend){
 }
 # RevValveTimeSeries("6950NE", 5, "12/11/2022 00:00", "12/12/2022 00:00")
 
-# Heating capacity (Btu/h) and heating load with outdoor air temperature as timeseries
-HeatCapacityTimeSeries <- function(site, interval, timestart, timeend){
+# Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
+HeatOutputTimeSeries <- function(site, interval, timestart, timeend){
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
                 Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
@@ -679,7 +669,7 @@ HeatCapacityTimeSeries <- function(site, interval, timestart, timeend){
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
     group_by(Site_ID,date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
-              Heating_Capacity = mean(HP_Heating_Capacity_Btu_h,na.rm=T),
+              Heating_Output = mean(HP_Heat_Output_Btu_h,na.rm=T),
               Heating_Load = mean(Heating_Load_Btu_h,na.rm=T),
               OA_Temp = mean(OA_TempF,na.rm=T)) %>%
     ggplot(aes(x = as.POSIXct(Timestamp))) + 
