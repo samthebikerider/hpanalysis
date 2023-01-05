@@ -49,33 +49,13 @@ metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
   # for each site.
 
 # Michaels data
-  # data.table automatically converted the timestamp to POSIXct, so just need to change TZ now
-temp <- df_michaels[0,] %>% mutate(Timestamp = NA)
-for (id in metadata$Site_ID){
-  sub <- df_michaels %>% filter(Site_ID == id)
-  sub$Timestamp = sub$index %>% force_tz(tzone = "UTC")
-  temp <- rbind(temp, sub)
-}
-df_michaels <- temp %>% arrange(Site_ID, Timestamp)
+  # data.table automatically converted the timestamp to POSIXct, so just need to force TZ
+df_michaels$Timestamp <- df_michaels$index %>% force_tz(tzone = "UTC")
 
-# Energy 350 data (1-minute)
-temp <- df_e350_min[0,]
-for (id in metadata$Site_ID){
-  sub <- df_e350_min %>% filter(Site_ID == id)
-  sub$Timestamp = as.POSIXct(strptime(sub$Timestamp, tz="UTC","%m/%d/%Y %H:%M"))
-  temp <- rbind(temp, sub)
-}
-df_e350_min <- temp
-
-temp <- df_e350_sec[0,]
-for (id in metadata$Site_ID){
-  sub <- df_e350_sec %>% filter(Site_ID == id)
-  sub$Timestamp = as.POSIXct(strptime(sub$Timestamp, tz="UTC","%m/%d/%Y %H:%M:%S")) %>%
-    with_tz(tzone="UTC")
-  temp <- rbind(temp, sub)
-}
-df_e350_sec <- temp
-rm(temp, sub, id)
+# Energy 350 data (1-minute and 1-second)
+  # Convert to POSIXct and force TZ to UTC
+df_e350_min$Timestamp = as.POSIXct(strptime(df_e350_min$`Timestamp (UTC)`, tz="UTC","%m/%d/%Y %H:%M"))
+df_e350_sec$Timestamp = as.POSIXct(strptime(df_e350_sec$`Timestamp (UTC)`, tz="UTC","%m/%d/%Y %H:%M:%S"))
 
 
 
@@ -127,6 +107,35 @@ df_e350 <- rbind(
   arrange(Site_ID, Timestamp)
 
 rm(df_e350_min, df_e350_sec)
+
+
+# Fill in missing temperature data for E350 data (only minute level)
+  # Assumes minute data (when seconds are zero) has temperature data and
+  # second data is missing it.
+  # Important that the data is sorted by site and then timestamp, which it should be.
+fillMissingTemp <- function(df){
+  sa1_temp = NA     # initialize temperatures
+  sa2_temp = NA
+  oa_temp = NA
+  ra_temp = NA
+  
+  for(row in 1:nrow(df)){
+    if(second(df$Timestamp)==0){
+    # At the minute level, make a record of the temperatures
+      sa1_temp = df$SA1_TempF[row]
+      sa2_temp = df$SA2_TempF[row]
+      oa_temp = df$OA_TempF[row]
+      ra_temp = df$RA_TempF[row]
+    } else {
+    # And for all other data, record as the stored value
+      df$SA1_TempF[row] = sa1_temp
+      df$SA2_TempF[row] = sa2_temp
+      df$OA_TempF[row] = oa_temp
+      df$RA_TempF[row] = ra_temp
+    }
+  }
+}
+df_e350 <- fillMissingTemp(df_e350)
 
 
 # Operating mode
