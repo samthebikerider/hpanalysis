@@ -214,13 +214,12 @@ fan_power_curve <- function(fan_power, siteid){
   # Correlate fan power (kW) to volumetric flow rate (CFM) based on initial testing
   # Function will output the air supply in CFM for an input power in Watts
   # We will need to add a line for each site in this function.
-  supply_flow_rate_CFM = ifelse(siteid=="6950NE",
-                      116.48 * (fan_power*1000) ^ 0.3866,
-                      ifelse(siteid=="8220XE",
-                             152.27 * (fan_power*1000) ^ 0.3812,
-                             ifelse(siteid=="4228VB",
-                                    1647.7 * fan_power^0.394,
-                                    NA)))
+  # Note: Michaels gave curves in W and E350 in kW, so Michaels' sites need * 1,000
+  supply_flow_rate_CFM = ifelse(siteid=="6950NE", 116.48 * (fan_power*1000) ^ 0.3866,
+                         ifelse(siteid=="8220XE", 152.27 * (fan_power*1000) ^ 0.3812,
+                         ifelse(siteid=="4228VB", 1647.7 * fan_power^0.394,
+                         ifelse(siteid=="9944LD", 115.09 * (fan_power*1000)^0.3926,
+                                    NA))))
 }
 df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
@@ -460,7 +459,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries(1, "Supply_Humidity", 5, "12/15/2022 00:00", "12/30/2022 00:00")
+# TimeSeries("6950NE", "OA_RH", 5, "12/01/2022 00:00", "01/30/2023 00:00")
 # "6950NE"
 
 
@@ -581,7 +580,7 @@ PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# PowerTimeSeriesOAT("4228VB", 5, "12/11/2022 00:00", "12/31/2022 00:00")
+# PowerTimeSeriesOAT("4228VB", 5, "12/25/2022 16:00", "12/26/2022 12:00")
 
 
 # Power time series comparison chart with supply temperature
@@ -659,7 +658,7 @@ RevValveTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# RevValveTimeSeries("4228VB", 5, "12/11/2022 00:00", "12/31/2022 00:00")
+# RevValveTimeSeries("6950NE", 5, "01/01/2023 00:00", "01/02/2023 00:00")
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
@@ -669,14 +668,16 @@ HeatOutputTimeSeries <- function(site, interval, timestart, timeend){
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    group_by(Site_ID,date, hour, Interval) %>% 
+    group_by(Site_ID, date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
-              Heating_Output = mean(HP_Heat_Output_Btu_h,na.rm=T),
+              HP_Heating_Output = mean(HP_Heat_Output_Btu_h,na.rm=T),
               Heating_Load = mean(Heating_Load_Btu_h,na.rm=T),
+              Sys_Heating_Output = mean(HP_Cool_Output_Btu_h + Aux_Heat_Output_Btu_h, na.rm=T),
               OA_Temp = mean(OA_TempF,na.rm=T)) %>%
     ggplot(aes(x = as.POSIXct(Timestamp))) + 
-    geom_line(size = 0.3, aes(y = Heating_Output, color="HP Heating Capacity")) +
+    geom_line(size = 0.3, aes(y = HP_Heating_Output, color="HP Heating Output")) +
     geom_line(size = 0.3, aes(y = Heating_Load, color="System Heating Load")) +
+    geom_line(size = 0.3, aes(y = Sys_Heating_Output, color="System Heating Output")) +
     geom_line(size = 0.3, aes(y = OA_Temp*1000, color="Outdoor Air Temperature")) +
     scale_color_manual(name = "", values = c("#E69F00", "black", "#56B4E9", "#009E73", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
     scale_y_continuous(name = "Heating Output/Load (Btu/hr)",
@@ -768,6 +769,29 @@ RunTimesTimeSeries <- function(site, timestart, timeend){
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 # RunTimesTimeSeries("4228VB", "12/01/2022 00:00", "12/31/2022 00:00")
+
+# Operating mode daily summary
+OperatingModeTime <- function(site, timestart, timeend){
+  # Look at a time series graph of each day to see percent of time in each operating mode
+  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
+                Operating_Mode = replace(Operating_Mode, !is.na(Operating_Mode) & 
+                                           (Operating_Mode=="Heating-Off" | Operating_Mode=="Cooling-Off"), "Off")) %>%
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
+    ggplot(aes(x=date, fill=Operating_Mode, y=1)) +
+    geom_bar(position="fill", stat="identity") +
+    labs(title=paste0("Percent of time in each operating mode per day for site ", site),x="", y="", fill="Operating Mode") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) 
+}
+# OperatingModeTime("6950NE", "12/01/2022 00:00", "01/30/2023 00:00")
+
 
 # Electricity usage vs. outdoor temperature
 # The graph in the powerpoint has it grouped into 3-month intervals, but I'm
