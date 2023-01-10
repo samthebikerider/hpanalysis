@@ -580,7 +580,7 @@ PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# PowerTimeSeriesOAT("4228VB", 5, "12/25/2022 16:00", "12/26/2022 12:00")
+PowerTimeSeriesOAT("6950NE", 5, "12/27/2022 16:00", "12/29/2022 12:00")
 
 
 # Power time series comparison chart with supply temperature
@@ -898,7 +898,7 @@ Heat_COP <- function(site, timestart, timeend){
   ggplot(aes(x = temp_int, y = COP, color = as.character(Site_ID), group=Site_ID)) + 
     geom_line(size = 1) +
     geom_point(size=2) +
-    labs(title="Heating COP vs. Outdoor Air Temperature",
+    labs(title="Demonstrated COP vs. Outdoor Air Temperature",
          x="Outdoor Temperature (F)",
          y="COP",
          color = "Site") +
