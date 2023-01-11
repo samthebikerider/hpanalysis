@@ -294,38 +294,6 @@ df <- df %>% mutate(
     (AHU_Power + HP_Power) * 3412),                           # Convert total system power from kW to Btu/hr
 
 
-  # # Heat Pump Heating capacity (Q-heating)
-  #   # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
-  #   # Capacity should only include when HP is at full (or near full) power or in defrost mode
-  #   # This is challenging because the systems that modulate more may not spend much time
-  #   # At full power, and so we may not enough data at every temperature bin.
-  #   # Also, I think this could show it as running a disproportionately amount of time
-  #   # in defrost mode if we are ignoring times with partial HP power and show the 
-  #   # heating capacity as less than it should be.
-  # HP_Heating_Capacity_Btu_h = ifelse(
-  #   # Make NA if in cooling mode or in heating mode and less that measured power rating
-  #   Operating_Mode=="Cooling" | (Operating_Mode=="Heating" & HP_Power < HP_Measured_Size_kW), NA,
-  #     # Otherwise at full power or in defrost mode, which will show as negative capacity
-  #     0.0765 *                                                # Density of air at 15C (lb/ft3)
-  #     supply_flow_rate_CFM * 60 *                             # CFM * min/hour
-  #     (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
-  #     (SA_TempF - RA_TempF) -                                 # Temperature delta
-  #   Aux_Power * 3412),                                        # Subtract auxiliary power, convert kW to btu/hr
-
-
-  # # Cooling capacity (Q-cooling)
-  #   # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
-  #   # Once we have data in cooling mode, need to confirm if the HP measured size for
-  #   # cooling is the same as for heating
-  # HP_Cooling_Capacity_Btu_h = ifelse(
-  #   Operating_Mode == "Heating" | Operating_Mode=="Defrost" | HP_Power < HP_Measured_Size_kW, NA,
-  #     0.0765 *                                                          # Density of air at 15C (lb/ft3)
-  #     supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
-  #     (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
-  #     (SA_TempF - RA_TempF) /
-  #     (1 + Supply_Humidity_Ratio)),
-
-
   # COP heating
     # VM: wondering if we should report COP with and without supplemental heat.
     # I personally think that supplemental heat should not be part of the COP
@@ -563,9 +531,9 @@ PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
               OA_TempF = mean(OA_TempF,na.rm=T)) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
     geom_line(aes(y=OA_TempF/2.5, color = "Outdoor Temperature"),size=0.3) + 
-    geom_line(aes(y=Total_Power, color = "Total Power"),size=0.3) + 
+    geom_line(aes(y=Total_Power, color = "Total Power"),size=0.3) +
     geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
-    geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) + 
+    geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) +
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
                        sec.axis = sec_axis(~.*2.5, name ="Outdoor Air Temperature (F)")) +
@@ -580,7 +548,7 @@ PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-PowerTimeSeriesOAT("6950NE", 5, "12/27/2022 16:00", "12/29/2022 12:00")
+# PowerTimeSeriesOAT("4228VB", 5, "12/23/2022 0:00", "12/24/2022 0:00")
 
 
 # Power time series comparison chart with supply temperature
@@ -621,7 +589,7 @@ PowerTimeSeriesSA <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# PowerTimeSeriesSA("4228VB", 5, "12/25/2022 16:00", "12/26/2022 12:00")
+# PowerTimeSeriesSA("4228VB", 5, "12/23/2022 16:00", "12/26/2022 12:00")
 
 
 # Reversing valve voltage chart with supply temperature
@@ -639,15 +607,18 @@ RevValveTimeSeries <- function(site, interval, timestart, timeend){
     group_by(Site_ID,date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
               HP_Power = mean(HP_Power,na.rm=T),
-              RV_Volts = mean(RV_Volts,na.rm=T),
+              Aux_Power = mean(Aux_Power, na.rm=T),
+              RV_Volts = mean(Fan_Power,na.rm=T),
               SA_TempF = mean(SA_TempF,na.rm=T)) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
     geom_line(aes(y=SA_TempF/20, color = "Supply Air Temperature"),size=0.3) + 
     geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
-    geom_line(aes(y=RV_Volts, color = "RV Voltage"),size=0.3) + 
+    geom_line(aes(y=Aux_Power, color = "Aux Power"),size=0.3) + 
+    geom_line(aes(y=RV_Volts, color = "Fan Power"),size=0.3) + 
+    geom_hline(yintercept=0) +
     scale_y_continuous(name = "Power (kW)/Volts",
                        sec.axis = sec_axis(~.*20, name ="Supply Air Temperature (F)")) +
-    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9", "black","#009E73", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
     labs(title=paste0("RV Voltage and SA temp time series plot for site ", site),x="") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -658,7 +629,7 @@ RevValveTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# RevValveTimeSeries("6950NE", 5, "01/01/2023 00:00", "01/02/2023 00:00")
+RevValveTimeSeries("4228VB", 1, "01/07/2023 0:00", "01/19/2023 0:00")
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
