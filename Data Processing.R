@@ -132,36 +132,59 @@ df_e350$SA2_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA2_TempF)
 df_e350$OA_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$OA_TempF)
 df_e350$RA_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$RA_TempF)
 
-# Operating mode
-  # For Michaels/Lennox, 0V indicates heating mode and 2.7-3.0V indicates cooling mode,
-  # but defrost is also cooling and needs to be separated. Because, if it is in 
-  # defrost mode, we don't want to be calculating cooling capacity, we want that
-  # to count against the heating capacity, I would think. So, I'm making
-  # three modes: heating, cooling, and defrost for accurately pinpoint 
-  # what the operation is, using outdoor air temperature to help.
-  
+
+## Operating mode and defrost cycles ##
+  # Objective: Create a column with operating mode: 
+    # Heating-HP Only
+    # Heating-Aux/HP
+    # Heating-Aux Only
+    # Heating-Off
+    # Defrost
+    # Note: Only applicable for winter--to determine cooling mode, will 
+      # need to revisit this part and edit, maybe using OAT.
+  # And then a column with the HP heat cycle run times and a column with the 
+  # Defrost mode run times, which will be a length in time in minutes at the last
+  # row of the respective cycle.
+
+  # For Michaels/Lennox, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
+  # For the first data dump (before 2022-12-19 18:14:54 UTC), the RV_Volts seems to 
+  # be off by a factor of 0.1, so that needs to be corrected manually here.
+  # Use OAT to differentiate cooling and defrost mode, and HP and aux power to 
+  # determine which type of heating mode or cooling mode it is in.
+  # Also, calculate Aux_Power for Michaels data (E350 is already calculated)
+
+df_michaels <- df_michaels %>% mutate(
+  RV_Volts = ifelse(Timestamp < strptime("2022-12-19 18:14:54", format="%Y-%m-%d %M:%H:%S"),
+                    RV_Volts * 10, RV_Volts),
+  Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T),
+  Operating_Mode = ifelse(RV_Volts < 1, 
+                          ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
+                          ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
+                          ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
+                          "Heating-Off"))),
+                              "Defrost"))
+
   # For Energy350: DC Voltage signal to heat pump reversing valve. +1.5 should 
   # equal no signal. A -12V pulse (900 ms) is expected for cooling signal and a 
   # +3V pulse (900 ms) is expected for heating signal.
-  # We only have OAT at 1-minute interval, so there will be many NA values. Heating
-  # capacity will be the same because SA and RA temperature.
-df_michaels <- df_michaels %>% mutate(
-  Operating_Mode = ifelse(HP_Power < 0.01 & OA_TempF < 45, "Heating-Off",
-                          ifelse(RV_Volts < 0.1, "Heating",
-                            ifelse(OA_TempF < 45, "Defrost",
-                              ifelse(HP_Power < 0.01, "Cooling-Off",
-                                   "Cooling")))))
+  # However, the pulse seems to be too short to be picked up consistently at the
+  # 1-second level, so need to use other indicators to determine defrost mode:
+    #	Heat pump power between 0.25-1.0 kW [Edit: loosening to 0.2-1.5kW to catch defrost mode sooner]
+    #	Fan power greater than 0.30 kW
+    #	Aux heat greater than 4kW [Edit: loosening to 0.1 kW to catch defrost mode sooner]
+  # When exiting defrost mode, HP power will exit that range, and aux power should
+  # drop to 0 kW, or nearly 0 kW (it may be possible aux continues if HP can't 
+  # support load, but that is unlikely in the temp ranges we expect to see defrosting).
+  # A loop is necessary:
 df_e350 <- df_e350 %>% mutate(
-  Operating_Mode = ifelse(HP_Power < 0.01 & OA_TempF <45, "Heating-Off",
-                          ifelse(RV_Volts > 2.5, "Heating",
-                            ifelse(RV_Volts < -10 & OA_TempF < 40, "Defrost",
-                              ifelse(RV_Volts < -10 & HP_Power < 0.01, "Cooling-Off",
-                                ifelse(RV_Volts < -10, "Cooling",
-                                    NA))))))
+  Operating_Mode = ifelse(HP_Power > 0.20 & HP_Power < 1.5 & Fan_Power > 0.3 & Aux_Power > 0.1, 
+                          "Defrost",
+                    ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
+                    ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
+                    ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
+                          "Heating-Off")))))
 
-# Calculate Aux_Power for Michaels data (E350 is already calculated)
-df_michaels <- df_michaels %>% mutate(
-  Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T))
+
 
 # Row bind e350 and Michaels data together
 df <- rbind(
@@ -188,6 +211,54 @@ df <- df %>% mutate(
 df <- df %>% mutate(
   SA_RH = rowMeans(cbind(SA1_RH, SA2_RH, SA3_RH, SA4_RH), na.rm=T),
   SA_TempF = rowMeans(cbind(SA1_TempF, SA2_TempF, SA3_TempF, SA4_TempF), na.rm=T))
+
+
+
+# Calculate heat and defrost run cycle duration for heat pump.
+  # The "mode" input should be "Heating" or "Defrost".
+  # The script is set up to calculate EITHER heating run time or defrost runtime (or any other mode, e.g., cooling)
+runCycleCalc <- function(site, timestamp, operate, mode){
+  
+  index <- which(operate == mode)[1]         # First row in heating/defrost mode
+  ts <- timestamp[index]                     # Timestamp at first non-NA row
+  cycle <- rep(NA, length(site))             # Initialize vector for cycle runtimes
+  ct <- site[index]                          # Initialize counter to detect new site
+  track <- TRUE                              # Tracker for new cycle
+  
+  for(row in (index+1):length(site)){
+    
+    if(site[row] != ct){
+      # If there is a new site, do not calculate previous cycle. Update 'ct' with new site.
+      ct <- site[row]                        # Update record of site
+      
+      if(operate[row] != mode | is.na(operate[row])){
+        track <- FALSE                       # Timestamp will be reset once it re-enters heat/defrost mode
+      } else {
+        ts <- timestamp[row]                 # Reset timestamp
+        track <- TRUE
+      }
+      
+    } else if(is.na(operate[row])){
+      next     # Skip NA rows, I think this makes the most sense. 
+      # Other option is to end cycle if it was in heating before the NA.
+      
+    } else if(operate[row] != mode & track==TRUE){
+      # Heating/defrost cycle ends: If the previous row was heating/defrost and this row is not, record runtime.
+      cycle[row-1] <- difftime(timestamp[row-1], ts, units="mins")
+      track <- FALSE
+      
+    } else if(operate[row] == mode & track == FALSE){
+      # Heating/defrost cycle begins: If the previous row was not heating/defrost and this row is, reset timestamp counter
+      ts <- timestamp[row]                   # Reset timestamp
+      track <- TRUE
+    }
+  }
+  
+  cycle    # Return cycle vector as output
+}
+
+df$HP_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Heating-HP Only")
+df$Defrost_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Defrost")
 
 
 # Calculate fields
@@ -258,9 +329,11 @@ energyCalc <- function(site, timestamp, power){
 df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$Total_Power)
 
 
+## Heating and cooling related calculations:
+df <- df %>% mutate(
+  
   # Heat Pump Heat Output
     # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
-df <- df %>% mutate(
   HP_Heat_Output_Btu_h = ifelse(
     Operating_Mode == "Cooling", NA,
       0.0765 *                                                # Density of air at 15C (lb/ft3)
@@ -275,13 +348,13 @@ df <- df %>% mutate(
 
   # Cooling output
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
-  HP_Cool_Output_Btu_h = ifelse(
-    Operating_Mode == "Heating", NA,
-      0.0765 *                                                          # Density of air at 15C (lb/ft3)
-      supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
-      (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
-      (SA_TempF - RA_TempF) /
-      (1 + Supply_Humidity_Ratio)),
+  # HP_Cool_Output_Btu_h = ifelse(
+  #   Operating_Mode == "Heating", NA,
+  #     0.0765 *                                                          # Density of air at 15C (lb/ft3)
+  #     supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
+  #     (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
+  #     (SA_TempF - RA_TempF) /
+  #     (1 + Supply_Humidity_Ratio)),
   
   # Heating load
   Heating_Load_Btu_h = ifelse(
@@ -289,9 +362,9 @@ df <- df %>% mutate(
     (AHU_Power + HP_Power) * 3412),                           # Convert total system power from kW to Btu/hr
 
   # Cooling load
-  Cooling_Load_Btu_h = ifelse(
-    Operating_Mode == "Heating"|Operating_Mode=="Defrost", NA,
-    (AHU_Power + HP_Power) * 3412),                           # Convert total system power from kW to Btu/hr
+  # Cooling_Load_Btu_h = ifelse(
+  #   Operating_Mode == "Heating"|Operating_Mode=="Defrost", NA,
+  #   (AHU_Power + HP_Power) * 3412),                           # Convert total system power from kW to Btu/hr
 
 
   # COP heating
@@ -303,107 +376,38 @@ df <- df %>% mutate(
     Heating_Load_Btu_h,
 
 # COP cooling
-  HP_COP_Cooling = (-1 * HP_Cool_Output_Btu_h) / 
-    Cooling_Load_Btu_h)
-
-
-# Calculate heat and defrost run cycle duration for heat pump.
-  # The "mode" input should be "Heating" or "Defrost".
-  # The script is set up to calculate EITHER heating run time or defrost runtime (or any other mode, e.g., cooling)
-runCycleCalc <- function(site, timestamp, operate, mode){
-  
-  index <- which(operate == mode)[1]         # First row in heating/defrost mode
-  ts <- timestamp[index]                     # Timestamp at first non-NA row
-  cycle <- rep(NA, length(site))             # Initialize vector for cycle runtimes
-  ct <- site[index]                          # Initialize counter to detect new site
-  track <- TRUE                              # Tracker for heating cycle
-  
-  for(row in (index+1):length(site)){
-
-    if(site[row] != ct){
-      # If there is a new site, do not calculate previous cycle. Reset trackers
-      ct <- site[row]                        # Update record of site
-      
-      if(operate[row] != mode | is.na(operate[row])){
-        track <- FALSE                       # Timestamp will be reset once it re-enters heat/defrost mode
-      } else {
-        ts <- timestamp[row]                 # Reset timestamp
-        track <- TRUE
-      }
-
-    } else if(is.na(operate[row])){
-      next     # Skip NA rows, I think this makes the most sense. 
-               # Other option is to end cycle if it was in heating before the NA.
-      
-    } else if(operate[row] != mode & track==TRUE){
-      # Heating/defrost cycle ends: If the previous row was heating/defrost and this row is not, record runtime.
-      cycle[row-1] <- difftime(timestamp[row-1], ts, units="mins")
-      track <- FALSE
-      
-    } else if(operate[row] == mode & track == FALSE){
-      # Heating/defrost cycle begins: If the previous row was not heating/defrost and this row is, reset timestamp counter
-      ts <- timestamp[row]                   # Reset timestamp
-      track <- TRUE
-    }
-  }
-  
-  cycle    # Return cycle vector as output
-}
-
-df$Heat_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Heating")
-df$Defrost_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Defrost")
+  # HP_COP_Cooling = (-1 * HP_Cool_Output_Btu_h) / 
+  #   Cooling_Load_Btu_h
+)
 
 
 
-### Diagnostic Tables ----
 
-# Run diagnostics on missing power data
-  # Not sure how helpful this is... keeping it here in case we want to update
-  # with a statistics table of some sort as an output.
-  # error on Mac OS: "Error in file(file, ifelse(append, "a", "w")) : 'mode' for the clipboard must be 'r' on Unix"
-powerDiagnostics <- function(site){
-  pwr_diag <- df %>% filter(Site_ID==site) %>% group_by(date) %>% summarize(
-    Percent_NA_HP = sum(is.na(HP_Power))/length(HP_Power),
-    Percent_NA_Aux = sum(is.na(Aux_Power))/length(Aux_Power))
-  
-  pwr_diag  # Return diagnostics table to write to clipboard
-}
-view(powerDiagnostics("6950NE"))
-write.table(powerDiagnostics("6950NE"), "clipboard",sep="\t",row.names = F)
+# ### Diagnostic Tables ----
+# 
+# # Run diagnostics on missing power data
+#   # Not sure how helpful this is... keeping it here in case we want to update
+#   # with a statistics table of some sort as an output.
+#   # error on Mac OS: "Error in file(file, ifelse(append, "a", "w")) : 'mode' for the clipboard must be 'r' on Unix"
+# powerDiagnostics <- function(site){
+#   pwr_diag <- df %>% filter(Site_ID==site) %>% group_by(date) %>% summarize(
+#     Percent_NA_HP = sum(is.na(HP_Power))/length(HP_Power),
+#     Percent_NA_Aux = sum(is.na(Aux_Power))/length(Aux_Power))
+#   
+#   pwr_diag  # Return diagnostics table to write to clipboard
+# }
+# view(powerDiagnostics("6950NE"))
+# write.table(powerDiagnostics("6950NE"), "clipboard",sep="\t",row.names = F)
 # 4228VB
 # 6950NE
 # 8220XE
 
-OATDiagnostics <- function(){
-  oat_diag <- df %>% group_by(Site_ID) %>% summarize(
-    Percent_Less_Than_Neg25 = sum(OA_TempF <= -25, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_Neg25_to_Neg20 = sum(OA_TempF > -25 & OA_TempF <= -20, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_Neg20_to_Neg15 = sum(OA_TempF > -20 & OA_TempF <= -15, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_Neg15_to_Neg10 = sum(OA_TempF > -15 & OA_TempF <= -10, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_Neg10_to_Neg5 = sum(OA_TempF > -10 & OA_TempF <= -5, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_Neg5_to_0 = sum(OA_TempF > -5 & OA_TempF <= 0, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_0_to_5 = sum(OA_TempF > 0 & OA_TempF <= 5, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_5_to_10 = sum(OA_TempF > 5 & OA_TempF <= 10, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_10_to_15 = sum(OA_TempF > 10 & OA_TempF <= 15, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_15_to_20 = sum(OA_TempF > 15 & OA_TempF <= 20, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_20_to_25 = sum(OA_TempF > 20 & OA_TempF <= 25, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_25_to_30 = sum(OA_TempF > 25 & OA_TempF <= 30, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_30_to_35 = sum(OA_TempF > 30 & OA_TempF <= 35, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_35_to_40 = sum(OA_TempF > 35 & OA_TempF <= 40, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_40_to_45 = sum(OA_TempF > 40 & OA_TempF <= 45, na.rm=T)/sum(!is.na(OA_TempF)),
-    Percent_More_Than_45 = sum(OA_TempF > 45, na.rm=T)/sum(!is.na(OA_TempF))
-  )
-  
-  oat_diag  # Return diagnostics table to write to clipboard
-}
-view(OATDiagnostics())
-write.table(OATDiagnostics(), "clipboard",sep="\t",row.names = F)
 
 
 
 
 
-### Time Series Graphs ----
+### Miscellaneous Investigation Graphs ----
 
 # Investigate time series for any variable
 TimeSeries <- function(site, parameter, interval, timestart, timeend){
@@ -428,7 +432,27 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 # TimeSeries("6950NE", "OA_RH", 5, "12/01/2022 00:00", "01/30/2023 00:00")
-# "6950NE"
+
+
+# Investigate NA values for any variable
+NATimeSeries <- function(site, parameter, timestart, timeend){
+  # Look at a time series graph for a given parameter, time period, and site.
+  # The site can be a list of multiple sites if would like to compare.
+  # The time start and end should be a date-time string in format for example "4/01/2022 08:00".
+  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID %in% site &
+             is.na(Parameter) &
+             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
+    ggplot(aes(x=as.POSIXct(Timestamp),y=1, color=Site_ID)) +
+    geom_line(size=0.5) + 
+    geom_hline(aes(yintercept = 0)) +
+    labs(title=paste0("Time series plot of NA ", parameter, " values"),x="Timestamp",y="NA=1", color="Site ID") +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA)) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+# NATimeSeries("6950NE", "OA_RH", "12/01/2022 00:00", "01/30/2023 00:00")
 
 
 # Temperature time series comparison chart
@@ -469,8 +493,7 @@ TempTimeSeries <- function(site, interval, timestart, timeend){
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 # TempTimeSeries("4228VB", 5, "12/01/2022 00:00", "12/31/2022 00:00")
-# "8220XE"
-# 6950NE
+
 
 # Supply temperature time series comparison chart
 SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
@@ -506,39 +529,39 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 # SupplyTempTimeSeries("4228VB", 5, "12/01/2022 00:00", "12/31/2022 00:00")
-#6950NE
 
 
+### Operation (Power and Temperature) Time Series ----
 
-# Power time series comparison chart with OAT
-PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
+# Power time series comparison chart with OAT and SAT
+OperationTimeSeries <- function(site, interval, timestart, timeend){
   # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
-  # The time start and end should be a date string in format for example "4/01/2022".
+  # The time start and end should be character with format "%Y-%m-%d".
   # Scale for the secondary axis may need to be adjusted manually, and will get more
   # complicated once we have outdoor values.
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
                 Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
+             Timestamp >= strptime(timestart,"%Y-%m-%d") &
+             Timestamp <= strptime(timeend,"%Y-%m-%d")) %>%
     group_by(Site_ID,date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
               HP_Power = mean(HP_Power,na.rm=T),
               Fan_Power = mean(Fan_Power,na.rm=T),
               Aux_Power = mean(Aux_Power,na.rm=T),
-              Total_Power = mean(Total_Power, na.rm=T),
-              OA_TempF = mean(OA_TempF,na.rm=T)) %>%
+              OA_TempF = mean(OA_TempF,na.rm=T),
+              SA_TempF = mean(SA_TempF,na.rm=T)) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=OA_TempF/2.5, color = "Outdoor Temperature"),size=0.3) + 
-    geom_line(aes(y=Total_Power, color = "Total Power"),size=0.3) +
+    geom_line(aes(y=OA_TempF/10, color = "Outdoor Temperature"),size=0.3) + 
+    geom_line(aes(y=SA_TempF/10, color = "Supply Temperature"),size=0.3) +
     geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
     geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) +
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
-                       sec.axis = sec_axis(~.*2.5, name ="Outdoor Air Temperature (F)")) +
-    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
-    labs(title=paste0("Power and OA temp time series plot for site ", site),x="") +
+                       sec.axis = sec_axis(~.*10, name ="SA/OA Temperature (F)")) +
+    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "gray", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    labs(title=paste0("System operation time series plot for site ", site),x="") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
@@ -548,50 +571,11 @@ PowerTimeSeriesOAT <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# PowerTimeSeriesOAT("4228VB", 5, "12/23/2022 0:00", "12/24/2022 0:00")
+# OperationTimeSeries("4228VB", 5, "2023-01-01", "2023-01-02")
 
 
-# Power time series comparison chart with supply temperature
-PowerTimeSeriesSA <- function(site, interval, timestart, timeend){
-  # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
-  # Interval is in units of minutes, and so the maximum interval would be one hour.
-  # The time start and end should be a date string in format for example "4/01/2022".
-  # Scale for the secondary axis may need to be adjusted manually, and will get more
-  # complicated once we have outdoor values.
-  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
-                Interval = minute(Timestamp) %/% interval) %>% 
-    filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    group_by(Site_ID,date, hour, Interval) %>% 
-    summarize(Timestamp = Timestamp[1],
-              HP_Power = mean(HP_Power,na.rm=T),
-              Fan_Power = mean(Fan_Power,na.rm=T),
-              Aux_Power = mean(Aux_Power,na.rm=T),
-              Total_Power = mean(Total_Power, na.rm=T),
-              SA_TempF = mean(SA_TempF,na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=SA_TempF/5, color = "Supply Air Temperature"),size=0.3) + 
-    geom_line(aes(y=Total_Power, color = "Total Power"),size=0.3) + 
-    geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
-    geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) + 
-    geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
-    scale_y_continuous(name = "Power (kW)",
-                       sec.axis = sec_axis(~.*5, name ="Supply Air Temperature (F)")) +
-    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
-    labs(title=paste0("Power and SA temp time series plot for site ", site),x="") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
-    guides(color=guide_legend(override.aes=list(size=3)))
-}
-# PowerTimeSeriesSA("4228VB", 5, "12/23/2022 16:00", "12/26/2022 12:00")
-
-
+### change this one to something to diagnose run times with HP, Aux, Fan Power
+  # Take graph above and add geom_point for max run time in interval on secondary axis
 # Reversing valve voltage chart with supply temperature
 RevValveTimeSeries <- function(site, interval, timestart, timeend){
   # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
@@ -854,6 +838,52 @@ HeatCapacityOAT <- function(site, timestart, timeend){
 
 ### Site Comparison Graphs ----
 
+OATDiagnostics <- function(site, timestart, timeend){
+  # Graph looking at percent of data in each OAT bin
+  df %>% filter(Site_ID %in% site &
+                Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
+                Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
+                OA_TempF <= 55 &
+                !is.na(OA_TempF)) %>%
+    group_by(Site_ID) %>% mutate(Site_Count = n()) %>% ungroup() %>%
+    group_by(Site_ID, temp_int = cut(OA_TempF, breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
+    summarize(Percent_OAT = n() * 100 / Site_Count[1]) %>%
+    ggplot(aes(x=temp_int, color=Site_ID, y=Percent_OAT)) +
+    geom_line(size=1) +
+    geom_hline(yintercept = 0)
+    labs(title="Percent of time in each OAT bin",x="Outdoor Air Temperature Bin", y="", color="Site") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) 
+}
+OATDiagnostics(unique(df$Site_ID), "12/01/2022 00:00", "01/30/2023 00:00")
+  
+  oat_diag <- df %>% group_by(Site_ID) %>% summarize(
+    Percent_Less_Than_Neg25 = sum(OA_TempF <= -25, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg25_to_Neg20 = sum(OA_TempF > -25 & OA_TempF <= -20, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg20_to_Neg15 = sum(OA_TempF > -20 & OA_TempF <= -15, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg15_to_Neg10 = sum(OA_TempF > -15 & OA_TempF <= -10, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg10_to_Neg5 = sum(OA_TempF > -10 & OA_TempF <= -5, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_Neg5_to_0 = sum(OA_TempF > -5 & OA_TempF <= 0, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_0_to_5 = sum(OA_TempF > 0 & OA_TempF <= 5, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_5_to_10 = sum(OA_TempF > 5 & OA_TempF <= 10, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_10_to_15 = sum(OA_TempF > 10 & OA_TempF <= 15, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_15_to_20 = sum(OA_TempF > 15 & OA_TempF <= 20, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_20_to_25 = sum(OA_TempF > 20 & OA_TempF <= 25, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_25_to_30 = sum(OA_TempF > 25 & OA_TempF <= 30, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_30_to_35 = sum(OA_TempF > 30 & OA_TempF <= 35, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_35_to_40 = sum(OA_TempF > 35 & OA_TempF <= 40, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_40_to_45 = sum(OA_TempF > 40 & OA_TempF <= 45, na.rm=T)/sum(!is.na(OA_TempF)),
+    Percent_More_Than_45 = sum(OA_TempF > 45, na.rm=T)/sum(!is.na(OA_TempF))
+  )
+  
+}
+
+
 # COP vs outdoor air temperature, hourly averages
   # This graph compares mutliple sites, so the timestart and timeend should be
   # entered in UTC.
@@ -953,31 +983,33 @@ SupplyReturnTemp <- function(site, timestart, timeend){
 
 
 
+### Print Graphs to Folder ----
+
+#### Loop to print operation graphs, one for each day for each site
+for(id in unique(df$Site_ID)){
+  print(id)
+  for(d in as.character(unique(df$date[df$Site_ID==id]))){
+    d1 = substr(as.character(strptime(d, "%Y-%m-%d") + 60*60*24), 1, 10) # Date plus one day
+    ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
+           plot = OperationTimeSeries(id, 1, d, d1),
+           path = paste0(wd,'/Graphs/',id, '/Daily Operation/'),
+           width=12, height=4, units='in')
+  }
+}
+rm(d1)
 
 
-
-
-## Loop through all graphs and print for each site
+## Loop through individual site diagnostic graphs
 for (id in metadata$Site_ID){
   timestart = "12/01/2022 00:00"
   timeend = "01/31/2023 00:00"
   
-  temp_time_series <- TempTimeSeries(id, 5, timestart, timeend)
-  supply_temp_time_series <- SupplyTempTimeSeries(id, 5, timestart, timeend)
-  power_time_series_oat <- PowerTimeSeriesOAT(id, 5, timestart, timeend)
-  power_time_series_sa <- PowerTimeSeriesSA(id, 5, timestart, timeend)
-  reverse_valve_time_series <- RevValveTimeSeries(id, 5, timestart, timeend)
   heat_capacity_oat <- HeatCapacityOAT(id, timestart, timeend)
   heat_capacity_time_series <- HeatOutputTimeSeries(id, 60, timestart, timeend)
   elec_usage <- ElecUsage(id, timestart, timeend)
   system_operation <- SystemOperationTimeSeries(id, timestart, timeend)
   runtime_time_series <- RunTimesTimeSeries(id, timestart, timeend)
   
-  ggsave('Temperature_TimeSeries.png', plot=temp_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-  ggsave('Supply_Temperature_TimeSeries.png', plot=supply_temp_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-  ggsave('Power_TimeSeries_OAT.png', plot=power_time_series_oat, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-  ggsave('Power_TimeSeries_SA.png', plot=power_time_series_sa, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-  ggsave('Reverse_Valve_TimeSeries.png', plot=reverse_valve_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('HeatCapacity_HeatLoad_v_OAT.png', plot=heat_capacity_oat, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('HeatCapacity_HeatLoad_TimeSeries.png', plot=heat_capacity_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
   ggsave('Elec_Use_v_OAT.png', plot=elec_usage, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
