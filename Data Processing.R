@@ -59,16 +59,19 @@ df_e350_sec$Timestamp = as.POSIXct(strptime(df_e350_sec$`Timestamp (UTC)`, tz="U
 
 
 
-## Bind dataframes together into one
-df_e350 <- rbind(
-  # Mintue-level data
+## Merge E350 dataframes together into one and clean
+df_e350 <- merge(
+  # Second-level data
+  df_e350_sec %>%
+  rename(RV_Volts=`Reversing_Valve_Signal [VDC]`,
+         HP_Power=`HP_Power [kW]`,
+         Fan_Power=`FanPower [kW]`,
+         AHU_Power=`AHU_Power [kW]`,
+         Aux_Power=`Aux_Heat_Power [kW]`) %>%
+  select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power),
+  # Minute-level data
   df_e350_min %>% 
-    rename(RV_Volts=`ReversingValveSignal [V]`,
-           HP_Power=`HP_Power [kW]`,
-           Fan_Power=`Fan_Power [kW]`,
-           AHU_Power=`AHU_Power [kW]`,
-           Aux_Power=`AuxHeat_Power [kW]`,
-           OA_TempF=`OA_Temp [°F]`,
+    rename(OA_TempF=`OA_Temp [°F]`,
            OA_RH=`OA_RH [%]`,
            SA1_TempF=`SA_Duct1_Temp [°F]`,
            SA2_TempF=`SA_Duct2_Temp [°F]`,
@@ -86,27 +89,33 @@ df_e350 <- rbind(
            Room3_RH=`Room3_RH [%]`,
            Room4_TempF=`Room4_Temp [°F]`,
            Room4_RH=`Room4_RH [%]`) %>%
-    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
+    select(Site_ID, Timestamp,
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
            RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
-           Room3_TempF, Room3_RH, Room4_TempF, Room4_RH) %>%
-    mutate(SA3_TempF=NA, SA3_RH=NA, SA4_TempF=NA, SA4_RH=NA),
-  # Second-level data
-  df_e350_sec %>%
-    filter(second(Timestamp) != 0) %>%    # Remove 0 second times to avoid duplicates from minute data
-    rename(RV_Volts=`Reversing_Valve_Signal [VDC]`,
-           HP_Power=`HP_Power [kW]`,
-           Fan_Power=`FanPower [kW]`,
-           AHU_Power=`AHU_Power [kW]`,
-           Aux_Power=`Aux_Heat_Power [kW]`) %>%
-    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power) %>%
-    mutate(OA_TempF=NA, OA_RH=NA, SA1_TempF=NA, SA2_TempF=NA, SA1_RH=NA, SA2_RH=NA, 
-           RA_TempF=NA, RA_RH=NA, AHU_TempF=NA, AHU_RH=NA, Room1_TempF=NA, Room1_RH=NA, 
-           Room2_TempF=NA, Room2_RH=NA, Room3_TempF=NA, Room3_RH=NA, Room4_TempF=NA, 
-           Room4_RH=NA, SA3_TempF=NA, SA3_RH=NA, SA4_TempF=NA, SA4_RH=NA)) %>% 
+           Room3_TempF, Room3_RH, Room4_TempF, Room4_RH),
+  by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>% 
   arrange(Site_ID, Timestamp)
 
 rm(df_e350_min, df_e350_sec)
+
+
+## Remove dates with missing power data
+  # Note: filter is what we are keeping, so needs to be opposite of what removing.
+  # I think it is best to remove entire days, to make energy calcs comparable on daily basis.
+df_e350 <- df_e350 %>% 
+  # Site 4228VB 
+    # Appears to be missing Aux power data before Dec 20, 2022, doesn't
+    # stabilize until evening of 21st. 
+  filter(Site_ID != "4228VB" | Timestamp >= strptime("2022-12-22", "%Y-%m-%d", tz="US/Mountain")) %>%
+    # December 30th 18:00 to January 2nd 18:00, the HP Power, and possibly at times Aux Power, is missing or too low to be reasonable. 
+  filter(Site_ID != "4228VB" | Timestamp <= strptime("2022-12-30", "%Y-%m-%d", tz="US/Mountain") |
+    Timestamp >= strptime("2023-01-03", "%Y-%m-%d", tz="US/Mountain")) %>%
+  # Site 8220XE:
+    # Data doesn't stabilize until Dec 12th at 12:00.
+  filter(Site_ID != "8220XE" | Timestamp >= strptime("2022-12-13", "%Y-%m-%d", tz="US/Central")) %>%
+    # Site 8220XE has one very high OAT, apply filter for all sites:
+  filter(OA_TempF < 150)
+
 
 
 # Fill in missing temperature data for E350 data (only minute level)
@@ -408,6 +417,9 @@ df <- df %>% mutate(
 
 
 ### Miscellaneous Investigation Graphs ----
+  # These are intended for custom analysis, not to print to folder for summary.
+  # The time series are too difficult to view for full time frames, and 
+  # these are not key parameters.
 
 # Investigate time series for any variable
 TimeSeries <- function(site, parameter, interval, timestart, timeend){
@@ -531,15 +543,49 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
 # SupplyTempTimeSeries("4228VB", 5, "12/01/2022 00:00", "12/31/2022 00:00")
 
 
-### Operation (Power and Temperature) Time Series ----
+
+### Time Series Daily Investigation Plots ----
+
+# Investigate defrost cycles for every day
+DefrostCycleTimeSeries <- function(site, timestart, timeend){
+  # Look at a time series graph for defrost run times and total duration
+  # as compared to HP, Aux, and Fan power and SA temperature
+  # The time start and end should be character with format "%Y-%m-%d".
+  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
+                Defrost = ifelse(Operating_Mode=="Defrost", 1, NA)) %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%Y-%m-%d") &
+             Timestamp <= strptime(timeend,"%Y-%m-%d")) %>%
+    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
+    geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) +
+    geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
+    geom_point(aes(y=Defrost, color = "Defrost Mode On"),size=2) + 
+    geom_point(aes(y=Defrost_Cycle_Runtimes, color = "Defrost Cycle Length"),size=3,shape=8) +
+    scale_y_continuous(name = "Power (kW)",
+                       sec.axis = sec_axis(~.*1, name ="Defrost Cycle Length (mins)")) +
+    scale_color_manual(name = "", breaks = c("Auxiliary Power","Heat Pump Power","Fan Power","Defrost Mode On","Defrost Cycle Length"),
+                       values = c("#E69F00", "black", "#56B4E9","#009E73", "#CC79A7", "gray", "#F0E442", "#0072B2", "#D55E00")) +
+    labs(title=paste0("Defrost runtime chart for site ", site),x="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.5),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
+    guides(color=guide_legend(override.aes = list(shape=c(NA,NA,NA,16,8), 
+                                                  size=c(1,1,1,3,3),
+                                                  linetype=c(1,1,1,NA,NA))))
+}
+DefrostCycleTimeSeries("4228VB", "2022-12-27", "2022-12-28")
+
 
 # Power time series comparison chart with OAT and SAT
 OperationTimeSeries <- function(site, interval, timestart, timeend){
   # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
   # The time start and end should be character with format "%Y-%m-%d".
-  # Scale for the secondary axis may need to be adjusted manually, and will get more
-  # complicated once we have outdoor values.
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
                 Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
@@ -564,56 +610,14 @@ OperationTimeSeries <- function(site, interval, timestart, timeend){
     labs(title=paste0("System operation time series plot for site ", site),x="") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.9),
+          panel.grid.major = element_line(size = 0.5),
           panel.grid.minor = element_line(size = 0.1),
           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# OperationTimeSeries("4228VB", 5, "2023-01-01", "2023-01-02")
-
-
-### change this one to something to diagnose run times with HP, Aux, Fan Power
-  # Take graph above and add geom_point for max run time in interval on secondary axis
-# Reversing valve voltage chart with supply temperature
-RevValveTimeSeries <- function(site, interval, timestart, timeend){
-  # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
-  # Interval is in units of minutes, and so the maximum interval would be one hour.
-  # The time start and end should be a date string in format for example "4/01/2022".
-  # Scale for the secondary axis may need to be adjusted manually, and will get more
-  # complicated once we have outdoor values.
-  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
-                Interval = minute(Timestamp) %/% interval) %>% 
-    filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    group_by(Site_ID,date, hour, Interval) %>% 
-    summarize(Timestamp = Timestamp[1],
-              HP_Power = mean(HP_Power,na.rm=T),
-              Aux_Power = mean(Aux_Power, na.rm=T),
-              RV_Volts = mean(Fan_Power,na.rm=T),
-              SA_TempF = mean(SA_TempF,na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=SA_TempF/20, color = "Supply Air Temperature"),size=0.3) + 
-    geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
-    geom_line(aes(y=Aux_Power, color = "Aux Power"),size=0.3) + 
-    geom_line(aes(y=RV_Volts, color = "Fan Power"),size=0.3) + 
-    geom_hline(yintercept=0) +
-    scale_y_continuous(name = "Power (kW)/Volts",
-                       sec.axis = sec_axis(~.*20, name ="Supply Air Temperature (F)")) +
-    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
-    labs(title=paste0("RV Voltage and SA temp time series plot for site ", site),x="") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
-    guides(color=guide_legend(override.aes=list(size=3)))
-}
-RevValveTimeSeries("4228VB", 1, "01/07/2023 0:00", "01/19/2023 0:00")
+OperationTimeSeries("4228VB", 5, "2023-01-01", "2023-01-02")
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
@@ -985,9 +989,8 @@ SupplyReturnTemp <- function(site, timestart, timeend){
 
 ### Print Graphs to Folder ----
 
-#### Loop to print operation graphs, one for each day for each site
+#### Loop to print daily time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
-  print(id)
   for(d in as.character(unique(df$date[df$Site_ID==id]))){
     d1 = substr(as.character(strptime(d, "%Y-%m-%d") + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
@@ -996,8 +999,18 @@ for(id in unique(df$Site_ID)){
            width=12, height=4, units='in')
   }
 }
-rm(d1)
+rm(d1,d,id)
 
+for(id in unique(df$Site_ID)){
+  for(d in as.character(unique(df$date[df$Site_ID==id]))){
+    d1 = substr(as.character(strptime(d, "%Y-%m-%d") + 60*60*24), 1, 10) # Date plus one day
+    ggsave(paste0(id, '_Daily-Defrost-Cycles_',d,'.png'),
+           plot = DefrostCycleTimeSeries(id, 1, d, d1),
+           path = paste0(wd,'/Graphs/',id, '/Daily Defrost Cycles/'),
+           width=12, height=4, units='in')
+  }
+}
+rm(d1,+d,id)
 
 ## Loop through individual site diagnostic graphs
 for (id in metadata$Site_ID){
