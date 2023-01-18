@@ -8,7 +8,7 @@ library(stringr)
 
 # Set working library
   # As a string variable to make it easier to change to folders within directory
-wd <- "C:/Users/keen930/PNNL/CCHP - General/Field Demonstration (Task 2)/R Data Analysis"
+wd <- "C:/Users/keen930/PNNL/CCHP - Project Management - Project Management/Data Analysis"
 wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/General/Field Demonstration (Task 2)/R Data Analysis"
 
 # Read data
@@ -28,12 +28,12 @@ df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv
 df_e350_min <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Minute"),pattern="*.csv", full.names=T) %>% 
   map_df(~read_plus(.)) %>% 
   # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(filename, 111, 116)) %>%
+  mutate(Site_ID = substr(filename, 112, 117)) %>%
   as.data.frame()
 df_e350_sec <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Second"),pattern="*.csv", full.names=T) %>% 
   map_df(~read_plus(.)) %>% 
   # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(filename, 111, 116)) %>%
+  mutate(Site_ID = substr(filename, 112, 117)) %>%
   as.data.frame()
 
 
@@ -68,6 +68,7 @@ df_e350 <- merge(
          Fan_Power=`FanPower [kW]`,
          AHU_Power=`AHU_Power [kW]`,
          Aux_Power=`Aux_Heat_Power [kW]`) %>%
+  filter(!is.na(Timestamp)) %>%
   select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power),
   # Minute-level data
   df_e350_min %>% 
@@ -94,12 +95,13 @@ df_e350 <- merge(
            RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
            Room3_TempF, Room3_RH, Room4_TempF, Room4_RH),
   by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>% 
-  arrange(Site_ID, Timestamp)
+  arrange(Site_ID, Timestamp) %>%
+  mutate(SA3_TempF = NA, SA3_RH = NA, SA4_TempF = NA, SA4_RH = NA)
 
 rm(df_e350_min, df_e350_sec)
 
 
-## Remove dates with missing power data
+## Remove dates with missing critical data
   # Note: filter is what we are keeping, so needs to be opposite of what removing.
   # I think it is best to remove entire days, to make energy calcs comparable on daily basis.
 df_e350 <- df_e350 %>% 
@@ -109,11 +111,16 @@ df_e350 <- df_e350 %>%
   filter(Site_ID != "4228VB" | Timestamp >= strptime("2022-12-22", "%Y-%m-%d", tz="US/Mountain")) %>%
     # December 30th 18:00 to January 2nd 18:00, the HP Power, and possibly at times Aux Power, is missing or too low to be reasonable. 
   filter(Site_ID != "4228VB" | Timestamp <= strptime("2022-12-30", "%Y-%m-%d", tz="US/Mountain") |
-    Timestamp >= strptime("2023-01-03", "%Y-%m-%d", tz="US/Mountain")) %>%
+    Timestamp >= strptime("2023-01-03", "%Y-%m-%d", tz="US/Mountain")) 
+
+df_michaels <- df_michaels %>%
   # Site 8220XE:
     # Data doesn't stabilize until Dec 12th at 12:00.
   filter(Site_ID != "8220XE" | Timestamp >= strptime("2022-12-13", "%Y-%m-%d", tz="US/Central")) %>%
-    # Site 8220XE has one very high OAT, apply filter for all sites:
+  # Site 6950NE:
+    # Data doesn't stabilize until December 10th
+  filter(Site_ID != "6950NE" | Timestamp >= strptime("2022-12-10", "%Y-%m-%d", tz="US/Central")) %>%
+    # Site 6950NE has one very high OAT, apply filter for all sites:
   filter(OA_TempF < 150)
 
 
