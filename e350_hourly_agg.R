@@ -12,6 +12,12 @@
 # maybe we add a "new" folder and an "old" folder and files are moved to "old"
 # after hourly agg is done
 #
+# integrate hourly agg into read so that it does the agg for each file, only
+# stores one csv at a time in memory
+#
+# reversing valve data?
+#
+#
 #####################################################
 ############ data import and processing #############
 #####################################################
@@ -57,12 +63,9 @@ agg_dfs <- function(df, site){
   setwd(path)
   df_agg <- df %>%
     group_by("date" = as.Date(`Timestamp (UTC)`), "hour_of_day" = as.POSIXlt(`Timestamp (UTC)`)$hour) %>%
-    summarise("reversing_valve_signal_V" = mean(`ReversingValveSignal [V]`, na.rm = T),
-              "HP_pwr_kw" = mean(`HP_Power [kW]`, na.rm = T),
+    summarise("HP_pwr_kw" = mean(`HP_Power [kW]`, na.rm = T),
               "fan_pwr_kw" = mean(`Fan_Power [kW]`, na.rm = T),
               "AHU_pwr_kw" = mean(`AHU_Power [kW]`, na.rm = T),
-              "aux_heat_relay_mean" = mean(`Aux_Heat_Relay [On/Off]`, na.rm = T),
-              "aux_heat_relay_sum" = sum(`Aux_Heat_Relay [On/Off]`, na.rm = T),
               "auxheat_pwr_kw" = mean(`AuxHeat_Power [kW]`, na.rm = T),
               "OA_temp_F" = mean(`OA_Temp [F]`, na.rm = T),
               "OA_RH" = mean(`OA_RH [%]`, na.rm = T),
