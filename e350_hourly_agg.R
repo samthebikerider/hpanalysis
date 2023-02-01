@@ -17,7 +17,7 @@
 #
 # reversing valve data?
 #
-#
+# for date and hour - it's UTC, should we change? add "local date and time" cols?
 #####################################################
 ############ data import and processing #############
 #####################################################
@@ -62,7 +62,7 @@ agg_dfs <- function(df, site){
   path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/Raw Data/Energy350/hourly"
   setwd(path)
   df_agg <- df %>%
-    group_by("date" = as.Date(`Timestamp (UTC)`), "hour_of_day" = as.POSIXlt(`Timestamp (UTC)`)$hour) %>%
+    group_by("date_UTC" = as.Date(`Timestamp (UTC)`), "hour_of_day_UTC" = as.POSIXlt(`Timestamp (UTC)`)$hour) %>%
     summarise("HP_pwr_kw" = mean(`HP_Power [kW]`, na.rm = T),
               "fan_pwr_kw" = mean(`Fan_Power [kW]`, na.rm = T),
               "AHU_pwr_kw" = mean(`AHU_Power [kW]`, na.rm = T),
