@@ -5,9 +5,13 @@
 # Description: 
 #####################################################
 # Todo:
+# at some point data will get too large to do it this way.in future, we will 
+# need to run the hourly function and bind_rows() with existing hourly 
+# aggregated data because there is no need to do it over and over
 # 
-# 
-# 
+# maybe we add a "new" folder and an "old" folder and files are moved to "old"
+# after hourly agg is done
+#
 #####################################################
 ############ data import and processing #############
 #####################################################
@@ -81,7 +85,6 @@ agg_dfs <- function(df, site){
               "room4_temp_F" = mean(`Room4_Temp [F]`, na.rm = T),
               "room4_RH" = mean(`Room4_RH [%]`, na.rm = T),
               "calculated_airflow_cfm" = mean(`Calculated Airflow [cfm]`, na.rm = T))
-  
   write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'))
 }
 
