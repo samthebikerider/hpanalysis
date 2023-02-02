@@ -194,6 +194,9 @@ df_michaels <- df_michaels %>%
   filter(Site_ID != "6950NE" | Timestamp >= strptime("2022-12-10", "%Y-%m-%d", tz="US/Central")) %>%
     # Site 6950NE has one very high OAT, apply filter for all sites:
   filter(OA_TempF < 150) %>%
+    # Site 9944LD only has about five hours of data on 1/16/2023
+  filter(Site_ID != "9944LD" | Timestamp < strptime("2023-12-16", "%Y-%m-%d", tz="US/Mountain") |
+           Timestamp >= strptime("2023-01-17", "%Y-%m-%d", tz="US/Mountain")) %>%
     # The indoor unit power data at site 9944LD is flipped negative between 1/7/23 and 1/12/23
   mutate(Fan_Power = ifelse(Fan_Power < 0, - Fan_Power, Fan_Power),
          AHU_Power = ifelse(AHU_Power < 0, - AHU_Power, AHU_Power),
@@ -252,17 +255,17 @@ df_nrcan$SA1_RH <- fillMissingTemp(df_nrcan$Timestamp, df_nrcan$SA1_RH)
   # row of the respective cycle.
 
   # For Michaels/Lennox, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
-  # For the first data dump (before 2022-12-19 18:14:54 UTC), the RV_Volts seems to 
+  # For the first data dump of the IA sites (before 2022-12-23 17:30 UTC), the RV_Volts seems to 
   # be off by a factor of 0.1, so that needs to be corrected manually here.
   # Use OAT to differentiate cooling and defrost mode, and HP and aux power to 
   # determine which type of heating mode or cooling mode it is in.
   # Also, calculate Aux_Power for Michaels data (E350 is already calculated)
 
 df_michaels <- df_michaels %>% mutate(
-  RV_Volts = ifelse(Timestamp < strptime("2022-12-19 18:14:54", format="%Y-%m-%d %M:%H:%S"),
+  RV_Volts = ifelse(Timestamp < strptime("2022-12-23 17:30:00", format="%Y-%m-%d %H:%M:%S", tz="UTC"),
                     RV_Volts * 10, RV_Volts),
   Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T),
-  Operating_Mode = ifelse(RV_Volts < 1, 
+  Operating_Mode = ifelse(RV_Volts < 25, 
                           ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
                           ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
                           ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
@@ -530,7 +533,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries("6950NE", "OA_RH", 5, "12/01/2022 00:00", "01/30/2023 00:00")
+# TimeSeries("6950NE", "RV_Volts", 1, "1/25/2023 00:00", "1/26/2023 00:00")
 
 
 # Investigate NA values for any variable
@@ -669,7 +672,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   size=c(1,1,1,3,3),
                                                   linetype=c(1,1,1,NA,NA))))
 }
-DefrostCycleTimeSeries("4228VB", "2022-12-23", "2022-12-24")
+# DefrostCycleTimeSeries("4228VB", "2022-12-23", "2022-12-24")
 
 
 # Power time series comparison chart with OAT and SAT
