@@ -49,12 +49,12 @@ df_min$`Calculated Airflow [cfm]` <- as.numeric(df_min$`Calculated Airflow [cfm]
 df_min_hourly <- df_min %>%
   group_by(as.Date(`Timestamp (UTC)`), as.POSIXlt(`Timestamp (UTC)`)$hour) %>%
   summarise("reversing_valve_signal_V" = mean(`ReversingValveSignal [V]`),
-            "HP_pwr_kw" = sum(`HP_Power [kW]`),
-            "fan_pwr_kw" = sum(`Fan_Power [kW]`),
-            "AHU_pwr_kw" = sum(`AHU_Power [kW]`),
+            "HP_pwr_kw" = mean(`HP_Power [kW]`),
+            "fan_pwr_kw" = mean(`Fan_Power [kW]`),
+            "AHU_pwr_kw" = mean(`AHU_Power [kW]`),
             "aux_heat_relay_mean" = mean(`Aux_Heat_Relay [On/Off]`),
             "aux_heat_relay_sum" = sum(`Aux_Heat_Relay [On/Off]`),
-            "auxheat_pwr_kw" = sum(`AuxHeat_Power [kW]`),
+            "auxheat_pwr_kw" = mean(`AuxHeat_Power [kW]`),
             "OA_temp_F" = mean(`OA_Temp [F]`),
             "OA_RH" = mean(`OA_RH [%]`),
             "SA_blower_temp_F" = mean(`SA_Blower_Temp [F]`),
@@ -86,13 +86,16 @@ df_min_hourly <- df_min %>%
 df_sec_hourly <- df_sec %>%
   group_by(as.Date(`Timestamp (UTC)`), as.POSIXlt(`Timestamp (UTC)`)$hour) %>%
   summarise("reversing_valve_signal_VDC" = mean(`Reversing_Valve_Signal [VDC]`),
-            "HP_pwr_kw_sec" = sum(`HP_Power [kW]`),
-            "fan_pwr_kw_sec" = sum(`FanPower [kW]`),
-            "AHU_pwr_kw_sec" = sum(`AHU_Power [kW]`),
-            "aux_heat_pwr_kw_sec" = sum(`Aux_Heat_Power [kW]`))
+            "HP_pwr_sec_kw" = mean(`HP_Power [kW]`),
+            "fan_pwr_sec_kw" = mean(`FanPower [kW]`),
+            "AHU_pwr_sec_kw" = mean(`AHU_Power [kW]`),
+            "aux_heat_pwr_sec_kw" = mean(`Aux_Heat_Power [kW]`))
 
 # merge aggregated second and minute df's into an output
 df_hourly <- df_min_hourly %>% inner_join(df_sec_hourly,
                                           by = c("as.Date(`Timestamp (UTC)`)",
-                                                 "as.POSIXlt(`Timestamp (UTC)`)$hour"))
+                                                 "as.POSIXlt(`Timestamp (UTC)`)$hour")) %>%
+              mutate_if(is.numeric, round, digits = 2)
             
+# save csv of hourly data
+write_csv(df_hourly, "4228VB_2023.01.09_Week02_hour.csv")
