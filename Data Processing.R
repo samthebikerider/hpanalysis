@@ -194,6 +194,9 @@ df_michaels <- df_michaels %>%
   filter(Site_ID != "6950NE" | Timestamp >= strptime("2022-12-10", "%Y-%m-%d", tz="US/Central")) %>%
     # Site 6950NE has one very high OAT, apply filter for all sites:
   filter(OA_TempF < 150) %>%
+    # Site 9944LD only has about five hours of data on 1/16/2023
+  filter(Site_ID != "9944LD" | Timestamp < strptime("2023-12-16", "%Y-%m-%d", tz="US/Mountain") |
+           Timestamp >= strptime("2023-01-17", "%Y-%m-%d", tz="US/Mountain")) %>%
     # The indoor unit power data at site 9944LD is flipped negative between 1/7/23 and 1/12/23
   mutate(Fan_Power = ifelse(Fan_Power < 0, - Fan_Power, Fan_Power),
          AHU_Power = ifelse(AHU_Power < 0, - AHU_Power, AHU_Power),
@@ -252,17 +255,17 @@ df_nrcan$SA1_RH <- fillMissingTemp(df_nrcan$Timestamp, df_nrcan$SA1_RH)
   # row of the respective cycle.
 
   # For Michaels/Lennox, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
-  # For the first data dump (before 2022-12-19 18:14:54 UTC), the RV_Volts seems to 
+  # For the first data dump of the IA sites (before 2022-12-23 17:30 UTC), the RV_Volts seems to 
   # be off by a factor of 0.1, so that needs to be corrected manually here.
   # Use OAT to differentiate cooling and defrost mode, and HP and aux power to 
   # determine which type of heating mode or cooling mode it is in.
   # Also, calculate Aux_Power for Michaels data (E350 is already calculated)
 
 df_michaels <- df_michaels %>% mutate(
-  RV_Volts = ifelse(Timestamp < strptime("2022-12-19 18:14:54", format="%Y-%m-%d %M:%H:%S"),
+  RV_Volts = ifelse(Timestamp < strptime("2022-12-23 17:30:00", format="%Y-%m-%d %H:%M:%S", tz="UTC"),
                     RV_Volts * 10, RV_Volts),
   Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T),
-  Operating_Mode = ifelse(RV_Volts < 1, 
+  Operating_Mode = ifelse(RV_Volts < 25, 
                           ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
                           ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
                           ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
@@ -291,11 +294,15 @@ df_e350 <- df_e350 %>% mutate(
                           "Heating-Off"))))) %>%
   select(-DEFROST_ON_1)
 
+df_nrcan <- df_nrcan %>% mutate(
+  Operating_Mode = "Heating-HP Only"
+)
 
 
-# Row bind e350 and Michaels data together
+# Row bind all data together
 df <- rbind(
   df_e350,
+  df_nrcan,
   df_michaels %>% 
     select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
@@ -303,7 +310,7 @@ df <- rbind(
            Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode) %>%
     mutate(Room4_TempF = NA, Room4_RH = NA)) %>% arrange(Site_ID, Timestamp)
 
-rm(df_michaels, df_e350)
+rm(df_michaels, df_e350, df_nrcan)
 
 
 # Add fields for date, hour, and week day
@@ -526,7 +533,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries("6950NE", "OA_RH", 5, "12/01/2022 00:00", "01/30/2023 00:00")
+# TimeSeries("6950NE", "RV_Volts", 1, "1/25/2023 00:00", "1/26/2023 00:00")
 
 
 # Investigate NA values for any variable
@@ -665,7 +672,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   size=c(1,1,1,3,3),
                                                   linetype=c(1,1,1,NA,NA))))
 }
-# DefrostCycleTimeSeries("6950NE", "2022-12-26", "2022-12-27")
+# DefrostCycleTimeSeries("4228VB", "2022-12-23", "2022-12-24")
 
 
 # Power time series comparison chart with OAT and SAT
@@ -684,7 +691,7 @@ OperationTimeSeries <- function(site, timestart, timeend){
     geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) +
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
-                       limits = c(-1, 16),
+                       limits = c(-2.5, 16),
                        sec.axis = sec_axis(~.*10, name ="SA/OA Temperature (F)")) +
     scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "gray", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
     labs(title=paste0("System operation time series plot for site ", site),x="") +
@@ -697,7 +704,7 @@ OperationTimeSeries <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# OperationTimeSeries("9944LD", 5, "2023-01-10", "2023-01-12")
+# OperationTimeSeries("2563EH", "2023-01-10", "2023-01-12")
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
@@ -1062,29 +1069,35 @@ SupplyReturnTemp <- function(site, timestart, timeend){
 
 ### Print Graphs to Folder ----
 
-#### Loop to print daily operation time series graphs, one for each day for each site
+# Loop to print daily operation time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
   for(d in unique(df$date[df$Site_ID==id])){
     d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
-           plot = OperationTimeSeries(id, 1, d, d1),
+           plot = OperationTimeSeries(id, d, d1),
            path = paste0(wd,'/Graphs/',id, '/Daily Operation/'),
            width=12, height=4, units='in')
   }
 }
 rm(d1,d,id)
 
+# Loop to print daily defrost time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
-  for(d in as.character(unique(df$date[df$Site_ID==id]))){
-    d = d %>% with_tz(tzone = metadata$Timezone[metadata$Site_ID==id])
-    d1 = substr(as.character(strptime(d, "%Y-%m-%d") + 60*60*24), 1, 10) # Date plus one day
+  for(d in unique(df$date[df$Site_ID==id])){
+    d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Defrost-Cycles_',d,'.png'),
-           plot = DefrostCycleTimeSeries(id, 1, d, d1),
+           plot = DefrostCycleTimeSeries(id, d, d1),
            path = paste0(wd,'/Graphs/',id, '/Daily Defrost Cycles/'),
            width=12, height=4, units='in')
   }
 }
 rm(d1,d,id)
+
+
+
+
+
+
 
 ## Loop through individual site diagnostic graphs
 for (id in metadata$Site_ID){
