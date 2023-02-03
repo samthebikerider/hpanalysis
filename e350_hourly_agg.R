@@ -33,7 +33,7 @@ library(stringr)
 # set wd, read data
 path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/Raw Data/Energy350/1-Minute"
 setwd(path)
-
+# check
 # read csv function that adds home ID column
 read_csv_homeID <- function(filename){
   df <- read.csv(filename, check.names = F)
