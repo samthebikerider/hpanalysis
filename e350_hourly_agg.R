@@ -101,8 +101,9 @@ agg_dfs <- function(df, site, tz){
   df_agg$local_datetime <- as.POSIXct(df_agg$local_datetime, format = "%Y-%m-%d %H", tz = "UTC")
   df_agg$local_datetime <- format(df_agg$local_datetime, tz = tz, usetz = T)
   df_agg <- df_agg %>% relocate(local_datetime)
+  df_agg <- 
   # return(df_agg)
-  write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'))
+  write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'), row.names = FALSE)
 }
 
 agg_dfs(site_4228VB, "4228VB", "US/Mountain")

@@ -59,6 +59,8 @@ read_csv_homeID <- function(filename){
   df <- df %>% relocate(HomeID)
   # df$index <- as.POSIXlt(df$index, format = "%Y-%m-%d %H:%M:%S%")
   df$minutes <- 1/60
+  df <- df %>%
+    mutate(Aux_Power = rowSums(across(c(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power)), na.rm = T))
   df
 }
 
@@ -85,7 +87,7 @@ agg_dfs <- function(df, site, tz){
     summarise("HP_pwr_kW" = mean(`HP_Power`, na.rm = T),
                "fan_pwr_kW" = mean(`Fan_Power`, na.rm = T),
                "AHU_pwr_kW" = mean(`AHU_Power`, na.rm = T),
-               "auxheat_pwr_kW" = mean(`Aux1_Power`, na.rm = T),
+               "auxheat_pwr_kW" = mean(`Aux_Power`, na.rm = T),
                "OA_temp_F" = mean(`OA_TempF`, na.rm = T),
                "OA_RH" = mean(`OA_RH`, na.rm = T),
                "SA_temp_blower_cabinet_F" = NA,
@@ -119,7 +121,7 @@ agg_dfs <- function(df, site, tz){
   df_agg$local_datetime <- format(df_agg$local_datetime, tz = tz, usetz = T)
   df_agg <- df_agg %>% relocate(local_datetime)
   # return(df_agg)
-  write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'))
+  write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'), row.names = FALSE)
 }
 
 agg_dfs(site_6950NE, "6950NE", "US/Central")
