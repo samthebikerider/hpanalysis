@@ -26,7 +26,7 @@ rm(list = ls())
 
 # packages
 library(tidyverse)
-library(zoo)
+# library(zoo)
 library(xts)
 library(stringr)
 
@@ -42,7 +42,7 @@ read_csv_homeID <- function(filename){
   df[-2] <- lapply(df[-2], as.numeric)
   df$HomeID <- substr(filename, 1, 6)
   df <- df %>% relocate(HomeID)
-  df$`Timestamp (UTC)` <- as.POSIXlt(df$`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M")
+  df$minutes <- 1
   df
 }
 
@@ -57,28 +57,34 @@ site_4228VB <- bind_rows(`4228VB_2022.12.19_Week51_1-minute.csv`, `4228VB_2022.1
                 `4228VB_2023.01.16_Week03_minute.csv`, `4228VB_2023.01.23_Week04_minute.csv`)
 #site 2 - 
 
+
 # function to aggregate dfs
-agg_dfs <- function(df, site){
-  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/Raw Data/Energy350/hourly"
+agg_dfs <- function(df, site, tz){
+  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data"
   setwd(path)
   df_agg <- df %>%
-    group_by("date_UTC" = as.Date(`Timestamp (UTC)`), "hour_of_day_UTC" = as.POSIXlt(`Timestamp (UTC)`)$hour) %>%
-    summarise("HP_pwr_kw" = mean(`HP_Power [kW]`, na.rm = T),
-              "fan_pwr_kw" = mean(`Fan_Power [kW]`, na.rm = T),
-              "AHU_pwr_kw" = mean(`AHU_Power [kW]`, na.rm = T),
-              "auxheat_pwr_kw" = mean(`AuxHeat_Power [kW]`, na.rm = T),
+    group_by("date_UTC" = as.Date(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M"),
+             "hour_of_day_UTC" = as.POSIXlt(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M")$hour) %>%
+    summarise("HP_pwr_kW" = mean(`HP_Power [kW]`, na.rm = T),
+              "fan_pwr_kW" = mean(`Fan_Power [kW]`, na.rm = T),
+              "AHU_pwr_kW" = mean(`AHU_Power [kW]`, na.rm = T),
+              "auxheat_pwr_kW" = mean(`AuxHeat_Power [kW]`, na.rm = T),
               "OA_temp_F" = mean(`OA_Temp [F]`, na.rm = T),
               "OA_RH" = mean(`OA_RH [%]`, na.rm = T),
-              "SA_blower_temp_F" = mean(`SA_Blower_Temp [F]`, na.rm = T),
-              "SA_blower_RH" = mean(`SA_Blower_RH [%]`, na.rm = T),
-              "SA_duct1_temp_F" = mean(`SA_Duct1_Temp [F]`, na.rm = T),
-              "SA_duct1_RH" = mean(`SA_Duct1_RH [%]`, na.rm = T),
-              "SA_duct2_temp_F" = mean(`SA_Duct2_Temp [F]`, na.rm = T),
-              "SA_duct2_RH" = mean(`SA_Duct2_RH [%]`, na.rm = T),
+              "SA_temp_blower_cabinet_F" = mean(`SA_Blower_Temp [F]`, na.rm = T),
+              "SA_RH_blower_cabinet" = mean(`SA_Blower_RH [%]`, na.rm = T),
+              "SA_temp_duct1_F" = mean(`SA_Duct1_Temp [F]`, na.rm = T),
+              "SA_RH_duct1" = mean(`SA_Duct1_RH [%]`, na.rm = T),
+              "SA_temp_duct2_F" = mean(`SA_Duct2_Temp [F]`, na.rm = T),
+              "SA_RH_duct2" = mean(`SA_Duct2_RH [%]`, na.rm = T),
+              "SA_temp_duct3_F" = NA,
+              "SA_RH_duct3" = NA,
+              "SA_temp_duct4_F" = NA,
+              "SA_RH_duct4" = NA,
               "RA_temp_F" = mean(`RA_Temp [F]`, na.rm = T),
               "RA_RH" = mean(`RA_RH [%]`, na.rm = T),
               "AHU_ambient_temp_F" = mean(`AHU_Ambient_Temp [F]`, na.rm = T),
-              "AHU_RH" = mean(`AHU_RH [%]`, na.rm = T),
+              "AHU_ambient_RH" = mean(`AHU_RH [%]`, na.rm = T),
               "room1_temp_F" = mean(`Room1_Temp [F]`, na.rm = T),
               "room1_RH" = mean(`Room1_RH [%]`, na.rm = T),
               "room2_temp_F" = mean(`Room2_Temp [F]`, na.rm = T),
@@ -87,8 +93,18 @@ agg_dfs <- function(df, site){
               "room3_RH" = mean(`Room3_RH [%]`, na.rm = T),
               "room4_temp_F" = mean(`Room4_Temp [F]`, na.rm = T),
               "room4_RH" = mean(`Room4_RH [%]`, na.rm = T),
-              "calculated_airflow_cfm" = mean(`Calculated Airflow [cfm]`, na.rm = T))
+              "reversing_valve_V" = NA,
+              "minutes_non_zero_in_hour" = sum(`minutes`))
+  df_agg <- as.data.frame(df_agg)
+  df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
+  df_agg$local_datetime <- paste(df_agg$date_UTC, df_agg$hour_of_day_UTC)
+  df_agg$local_datetime <- as.POSIXct(df_agg$local_datetime, format = "%Y-%m-%d %H")
+  df_agg$local_datetime <- format(df_agg$local_datetime, tz = tz, usetz = T)
+  df_agg <- df_agg %>% relocate(local_datetime)
+  #return(df_agg)
   write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'))
 }
 
-agg_dfs(site_4228VB, "4228VB")
+df <- agg_dfs(site_4228VB, "4228VB", "US/Mountain")
+
+sum(df$minutes_present_in_hour <60, na.rm = T)

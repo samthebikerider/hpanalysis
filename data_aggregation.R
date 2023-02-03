@@ -47,7 +47,7 @@ df_min$`Calculated Airflow [cfm]` <- as.numeric(df_min$`Calculated Airflow [cfm]
 #   - all temps and rh taken mean
 
 df_min_hourly <- df_min %>%
-  group_by(as.Date(`Timestamp (UTC)`), as.POSIXlt(`Timestamp (UTC)`)$hour) %>%
+  group_by(as.Date(`Timestamp (UTC)`), `Timestamp (UTC)`$hour) %>%
   summarise("reversing_valve_signal_V" = mean(`ReversingValveSignal [V]`),
             "HP_pwr_kw" = mean(`HP_Power [kW]`),
             "fan_pwr_kw" = mean(`Fan_Power [kW]`),
