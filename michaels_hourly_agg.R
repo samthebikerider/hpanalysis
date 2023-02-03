@@ -77,8 +77,8 @@ site_9944LD <- bind_rows(`PNNL_ccASHP__9944LD (3).csv`, `PNNL_ccASHP__9944LD (4)
                          `PNNL_ccASHP__9944LD (5).csv`)
 
 # function to aggregate dfs
-agg_dfs <- function(df, site){
-  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/Raw Data/Michaels/hourly"
+agg_dfs <- function(df, site, tz){
+  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data"
   setwd(path)
   df_agg <- df %>%
     group_by("date_UTC" = as.Date(`index`), "hour_of_day_UTC" = as.POSIXlt(`index`)$hour) %>%
@@ -114,11 +114,15 @@ agg_dfs <- function(df, site){
                "minutes_present_in_hour" = sum(`minutes`))
   df_agg <- as.data.frame(df_agg)
   df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
+  df_agg$local_datetime <- paste(df_agg$date_UTC, df_agg$hour_of_day_UTC)
+  df_agg$local_datetime <- as.POSIXct(df_agg$local_datetime, format = "%Y-%m-%d %H", tz = "UTC")
+  df_agg$local_datetime <- format(df_agg$local_datetime, tz = tz, usetz = T)
+  df_agg <- df_agg %>% relocate(local_datetime)
   # return(df_agg)
   write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'))
 }
 
-agg_dfs(site_6950NE, "6950NE")
-agg_dfs(site_8820XE, "8820XE")
-agg_dfs(site_6950NE, "9944LD")
+agg_dfs(site_6950NE, "6950NE", "US/Central")
+agg_dfs(site_8820XE, "8820XE", "US/Central")
+agg_dfs(site_6950NE, "9944LD", "US/Mountain")
 

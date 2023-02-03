@@ -63,8 +63,8 @@ agg_dfs <- function(df, site, tz){
   path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data"
   setwd(path)
   df_agg <- df %>%
-    group_by("date_UTC" = as.Date(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M"),
-             "hour_of_day_UTC" = as.POSIXlt(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M")$hour) %>%
+    group_by("date_UTC" = as.Date(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M", tz = "UTC"),
+             "hour_of_day_UTC" = as.POSIXlt(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M", tz = "UTC")$hour) %>%
     summarise("HP_pwr_kW" = mean(`HP_Power [kW]`, na.rm = T),
               "fan_pwr_kW" = mean(`Fan_Power [kW]`, na.rm = T),
               "AHU_pwr_kW" = mean(`AHU_Power [kW]`, na.rm = T),
@@ -98,13 +98,11 @@ agg_dfs <- function(df, site, tz){
   df_agg <- as.data.frame(df_agg)
   df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
   df_agg$local_datetime <- paste(df_agg$date_UTC, df_agg$hour_of_day_UTC)
-  df_agg$local_datetime <- as.POSIXct(df_agg$local_datetime, format = "%Y-%m-%d %H")
+  df_agg$local_datetime <- as.POSIXct(df_agg$local_datetime, format = "%Y-%m-%d %H", tz = "UTC")
   df_agg$local_datetime <- format(df_agg$local_datetime, tz = tz, usetz = T)
   df_agg <- df_agg %>% relocate(local_datetime)
-  #return(df_agg)
+  # return(df_agg)
   write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'))
 }
 
-df <- agg_dfs(site_4228VB, "4228VB", "US/Mountain")
-
-sum(df$minutes_present_in_hour <60, na.rm = T)
+agg_dfs(site_4228VB, "4228VB", "US/Mountain")
