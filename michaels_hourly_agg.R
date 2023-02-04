@@ -58,7 +58,7 @@ read_csv_homeID <- function(filename){
   df$HomeID <- substr(filename, 14, 19)
   df <- df %>% relocate(HomeID)
   # df$index <- as.POSIXlt(df$index, format = "%Y-%m-%d %H:%M:%S%")
-  df$minutes <- 1/60
+  df$seconds <- 1
   df <- df %>%
     mutate(Aux_Power = rowSums(across(c(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power)), na.rm = T))
   df
@@ -112,14 +112,16 @@ agg_dfs <- function(df, site, tz){
                "room3_RH" = mean(`Room3_RH`, na.rm = T),
                "room4_temp_F" = NA,
                "room4_RH" = NA,
-               "reversing_valve_V" = NA,
-               "minutes_present_in_hour" = sum(`minutes`))
+               "reversing_valve_signal_V" = mean(`RV_Volts`, na.rm = T),
+               "seconds_non_zero_in_hour" = sum(`seconds`))
   df_agg <- as.data.frame(df_agg)
   df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
-  df_agg$local_datetime <- paste(df_agg$date_UTC, df_agg$hour_of_day_UTC)
-  df_agg$local_datetime <- as.POSIXct(df_agg$local_datetime, format = "%Y-%m-%d %H", tz = "UTC")
-  df_agg$local_datetime <- format(df_agg$local_datetime, tz = tz, usetz = T)
+  df_agg$datetime_UTC <- paste(df_agg$date_UTC, df_agg$hour_of_day_UTC)
+  df_agg$datetime_UTC <- as.POSIXct(df_agg$datetime_UTC, format = "%Y-%m-%d %H", tz = "UTC")
+  df_agg$local_datetime <- format(df_agg$datetime_UTC, tz = tz, usetz = T)
+  df_agg <- df_agg %>% relocate(datetime_UTC)
   df_agg <- df_agg %>% relocate(local_datetime)
+  df_agg <- subset(df_agg, select=-c(date_UTC, hour_of_day_UTC))
   # return(df_agg)
   write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'), row.names = FALSE)
 }
