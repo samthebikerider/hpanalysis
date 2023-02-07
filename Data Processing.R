@@ -395,7 +395,8 @@ fan_power_curve <- function(fan_power, siteid){
                          ifelse(siteid=="8220XE", 152.27 * (fan_power*1000) ^ 0.3812,
                          ifelse(siteid=="4228VB", 1647.7 * fan_power^0.394,
                          ifelse(siteid=="9944LD", 115.09 * (fan_power*1000)^0.3926,
-                                    NA))))
+                         ifelse(siteid=="2563EH", 169.1 * (fan_power*1000)^0.2978,
+                                    NA)))))
 }
 df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
