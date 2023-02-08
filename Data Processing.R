@@ -28,7 +28,7 @@ read_plus <- function(file) {fread(file) %>%
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
   map_df(~read_plus_michaels(.)) %>% 
   # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(filename, nchar(filename)-13,nchar(filename)-8)) %>%
+  mutate(Site_ID = substr(filename, nchar(filename)-20,nchar(filename)-15)) %>%
   as.data.frame()
 
   # E350 data read one-minute and one-second data separately
@@ -137,7 +137,7 @@ df_e350 <- merge(
   arrange(Site_ID, Timestamp) %>%
   mutate(SA3_TempF = NA, SA3_RH = NA, SA4_TempF = NA, SA4_RH = NA)
 
-rm(df_e350_min, df_e350_sec)
+rm(df_e350_min, df_e350_sec, trane_rv)
 
 
 ## Merge NRCan dataframes together into one and clean
@@ -265,7 +265,7 @@ df_michaels <- df_michaels %>% mutate(
   RV_Volts = ifelse(Timestamp < strptime("2022-12-23 17:30:00", format="%Y-%m-%d %H:%M:%S", tz="UTC"),
                     RV_Volts * 10, RV_Volts),
   Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T),
-  Operating_Mode = ifelse(RV_Volts < 25, 
+  Operating_Mode = ifelse(RV_Volts < 25 | HP_Power < 0.1, 
                           ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
                           ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
                           ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
@@ -285,7 +285,7 @@ df_michaels <- df_michaels %>% mutate(
   # support load, but that is unlikely in the temp ranges we expect to see defrosting).
   # A loop is necessary:
 df_e350 <- df_e350 %>% mutate(
-  Operating_Mode = ifelse(DEFROST_ON_1==1, "Defrost",
+  Operating_Mode = ifelse(DEFROST_ON_1==1 & HP_Power > 0.1, "Defrost",
     # ifelse(HP_Power > 0.25 & HP_Power < 1 & Fan_Power > 0.3 & Aux_Power > 0.1, 
     #                       "Defrost",
                     ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
