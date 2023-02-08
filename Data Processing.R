@@ -133,9 +133,20 @@ df_e350 <- merge(
            Room3_TempF, Room3_RH, Room4_TempF, Room4_RH),
   by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>% 
     # Merge in Trane RV data
-  merge(trane_rv, by=c("Site_ID", "Timestamp"), all.x=F, all.y=F) %>%
+  merge(trane_rv, by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>%
   arrange(Site_ID, Timestamp) %>%
   mutate(SA3_TempF = NA, SA3_RH = NA, SA4_TempF = NA, SA4_RH = NA)
+
+
+  # Trane data is every four seconds, so need to fill in gaps to defrost mode
+for(row in 2:length(df_e350$DEFROST_ON_1)){
+  if(df_e350$Timestamp[row] < trane_rv$Timestamp[1] | 
+     df_e350$Timestamp[row] > trane_rv$Timestamp[nrow(trane_rv)]){
+    next
+  } else if(is.na(df_e350$DEFROST_ON_1[row])) {
+    df_e350$DEFROST_ON_1[row] <- df_e350$DEFROST_ON_1[row-1]
+  }
+}
 
 rm(df_e350_min, df_e350_sec, trane_rv)
 
@@ -320,14 +331,16 @@ rm(df_michaels, df_e350, df_nrcan)
   # it into a character vector so that we have it in local time. This will be 
   # important for the daily summary graphs.
 for(id in unique(df$Site_ID)){ 
-  df$date[df$Site_ID==id] <- date(df$Timestamp[df$Site_ID==id] %>% 
+  df$Date[df$Site_ID==id] <- date(df$Timestamp[df$Site_ID==id] %>% 
                                     with_tz(tzone=metadata$Timezone[metadata$Site_ID==id])) %>%
    as.character()
   
-  df$hour[df$Site_ID==id] <- hour(df$Timestamp[df$Site_ID==id] %>% 
+  df$Hour[df$Site_ID==id] <- hour(df$Timestamp[df$Site_ID==id] %>% 
                                     with_tz(tzone=metadata$Timezone[metadata$Site_ID==id]))
-  df$day[df$Site_ID==id] <- wday(df$Timestamp[df$Site_ID==id] %>% 
-                                   with_tz(tzone=metadata$Timezone[metadata$Site_ID==id]))
+  df$Weekday[df$Site_ID==id] <- lubridate::wday(df$Timestamp[df$Site_ID==id] %>% 
+                                   with_tz(tzone=metadata$Timezone[metadata$Site_ID==id]),
+                                   label=T) %>%
+    as.character()
 }
 
 
@@ -523,7 +536,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
     filter(Site_ID %in% site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-    group_by(Site_ID,date, hour, Interval) %>% 
+    group_by(Site_ID,Date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
               Parameter = mean(!!as.name(parameter),na.rm=T)) %>%
     ggplot(aes(x=as.POSIXct(Timestamp),y=Parameter, color=Site_ID)) +
@@ -568,7 +581,7 @@ TempTimeSeries <- function(site, interval, timestart, timeend){
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-    group_by(Site_ID,date, hour, Interval) %>% 
+    group_by(Site_ID,Date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
               SA_TempF = mean(SA_TempF,na.rm=T),
               RH_TempF = mean(RA_TempF,na.rm=T),
@@ -602,13 +615,13 @@ TempTimeSeries <- function(site, interval, timestart, timeend){
 SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
   # Look at a time series graph for the four supply temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
-  # The time start and end should be a date string in format for example "4/01/2022".
+  # The time start and end should be a Date string in format for example "4/01/2022".
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
                 Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-    group_by(Site_ID,date, hour, Interval) %>% 
+    group_by(Site_ID,Date, hour, Interval) %>% 
     summarize(Timestamp = Timestamp[1],
               SA1_TempF = mean(SA1_TempF,na.rm=T),
               SA2_TempF = mean(SA2_TempF,na.rm=T),
@@ -635,6 +648,18 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
 
 
 
+
+### NA Data Summary ----
+
+NA_summary_table <- df %>%
+  group_by(Site_ID, Date, Weekday) %>%
+  summarize(HP_Power_NA = round(sum(is.na(HP_Power))*100/ n(), 1),
+            Aux_Power_NA = round(sum(is.na(Aux_Power))*100/ n(),1),
+            Fan_Power_NA = round(sum(is.na(Fan_Power))*100/ n(),1),
+            Data_missing = round(100 - n()*100/ 86400, 1))
+write.csv(NA_summary_table, 
+          file=paste0(wd, "/Graphs/Missing_Power_Data_Summary.csv"),
+          row.names=F)
 
 
 
@@ -732,43 +757,16 @@ HeatOutputTimeSeries <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-HeatOutputTimeSeries("4228VB", "2022-12-23", "2022-12-24")
+# HeatOutputTimeSeries("4228VB", "2022-12-23", "2022-12-24")
 
 
-# Percent of time that heat pump and aux heat are running as timeseries
-SystemOperationTimeSeries <- function(site, timestart, timeend){
-  # Look at a time series graph to see for every hour, what percentage of that
-  # hour is the heat pump operating and the auxiliary heat.
-  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>%
-    filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    group_by(Site_ID, date, hour) %>% 
-    summarize(Timestamp = Timestamp[1],
-              Aux_Perc = sum(Aux_Power > 0.1,na.rm=T)*100/sum(!is.na(Aux_Power)),
-              HP_Perc = sum(HP_Power > 0.1,na.rm=T)*100/sum(!is.na(HP_Power)),
-              OA_Temp = mean(OA_TempF,na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=OA_Temp*2, color = "Outdoor Air Temperature"),size=0.3) + 
-    geom_line(aes(y=Aux_Perc, color = "Auxiliary"),size=0.3) + 
-    geom_line(aes(y=HP_Perc, color = "Heat Pump"),size=0.3) + 
-    scale_y_continuous(name = "Percent (%)",
-                       sec.axis = sec_axis(~./2, name ="Outdoor Air Temperature (F)")) +
-    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9", "black","#009E73", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
-    labs(title=paste0("Percent of time system is operating per hour for site ", site),x="") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
-    guides(color=guide_legend(override.aes=list(size=3)))
-}
-# SystemOperationTimeSeries("4228VB", "12/01/2022 00:00", "12/31/2022 00:00")
 
 
-# Graph to calculate number of heat and defrost run cycles and average length of cycle per day
+
+### Time Series Long Term Graphs ----
+
+
+# Number of heat and defrost run cycles and average length of cycle per day
 RunTimesTimeSeries <- function(site, timestart, timeend){
   # Look at a time series graph to see for every day, how many run cycles there are
   # and the average length of a cycle is. Plot against outdoor air temperature and humidity.
@@ -776,25 +774,25 @@ RunTimesTimeSeries <- function(site, timestart, timeend){
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    group_by(Site_ID, date) %>% 
+    group_by(Date) %>% 
     summarize(Timestamp = Timestamp[1],
-              Num_Heat_Cycles = sum(!is.na(Heat_Cycle_Runtimes)),
-              Average_Heat_Runtime = mean(Heat_Cycle_Runtimes,na.rm=T),
-              Num_Defrost_Cycles = sum(!is.na(Defrost_Cycle_Runtimes)),
+              Num_HP_Cycles = sum(HP_Cycle_Runtimes, na.rm=T),
+              Average_Heat_Runtime = mean(HP_Cycle_Runtimes,na.rm=T),
+              Num_Defrost_Cycles = sum(Defrost_Cycle_Runtimes, na.rm=T),
               Average_Defrost_Runtime = mean(Defrost_Cycle_Runtimes,na.rm=T),
               OA_Temp = mean(OA_TempF,na.rm=T),
               OA_RH = mean(OA_RH,na.rm=T)) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
     geom_line(size = 0.5, linetype="dashed",aes(y = OA_Temp, color="Outdoor Temperature", group=1)) +
     geom_line(size = 0.5, linetype="dashed",aes(y = OA_RH, color="Outdoor Humidity", group=1)) +
-    geom_line(size = 0.75, aes(y = Num_Heat_Cycles, color="Number of Heat Cycles", group=1)) +
-    geom_line(size = 0.75, aes(y = Average_Heat_Runtime, color="Average Heat Cycle Length", group=1)) +
-    geom_line(size = 0.75, aes(y = Num_Defrost_Cycles, color="Number of Defrost Cycles", group=1)) +
-    geom_line(size = 0.75, aes(y = Average_Defrost_Runtime, color="Average Defrost Cycle Length", group=1)) +
-    geom_point(size=1.5, aes(y = Num_Heat_Cycles), color="#E69F00") +
-    geom_point(size=1.5, aes(y = Average_Heat_Runtime), color="#CC79A7") +
-    geom_point(size=1.5, aes(y = Num_Defrost_Cycles), color="#009E73") +
-    geom_point(size=1.5, aes(y = Average_Defrost_Runtime), color="#D55E00") +
+    geom_point(size = 0.75, aes(y = Num_Heat_Cycles, color="Number of Heat Cycles", group=1)) +
+    geom_point(size = 0.75, aes(y = Average_Heat_Runtime, color="Average Heat Cycle Length", group=1)) +
+    geom_point(size = 0.75, aes(y = Num_Defrost_Cycles, color="Number of Defrost Cycles", group=1)) +
+    geom_point(size = 0.75, aes(y = Average_Defrost_Runtime, color="Average Defrost Cycle Length", group=1)) +
+    # geom_point(size=1.5, aes(y = Num_Heat_Cycles), color="#E69F00") +
+    # geom_point(size=1.5, aes(y = Average_Heat_Runtime), color="#CC79A7") +
+    # geom_point(size=1.5, aes(y = Num_Defrost_Cycles), color="#009E73") +
+    # geom_point(size=1.5, aes(y = Average_Defrost_Runtime), color="#D55E00") +
     scale_y_continuous(name = "Number of Cycles/Average Cycle Length (mins)",
                        sec.axis = sec_axis(~.*1, name ="Humidity (%)/Temperature (F)")) +
     scale_color_manual(name = "", values = c("#D55E00","#CC79A7","#009E73","#E69F00", "black","grey","#F0E442")) +
@@ -808,7 +806,7 @@ RunTimesTimeSeries <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# RunTimesTimeSeries("4228VB", "12/01/2022 00:00", "12/31/2022 00:00")
+RunTimesTimeSeries("4228VB", "12/01/2022 00:00", "12/31/2022 00:00")
 
 # Operating mode daily summary
 OperatingModeTime <- function(site, timestart, timeend){
@@ -819,7 +817,7 @@ OperatingModeTime <- function(site, timestart, timeend){
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    ggplot(aes(x=date, fill=Operating_Mode, y=1)) +
+    ggplot(aes(x=Date, fill=Operating_Mode, y=1)) +
     geom_bar(position="fill", stat="identity") +
     labs(title=paste0("Percent of time in each operating mode per day for site ", site),x="", y="", fill="Operating Mode") +
     theme_bw() +
@@ -842,7 +840,7 @@ ElecUsage <- function(site, timestart, timeend){
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M")) %>%
-    group_by(date) %>% 
+    group_by(Date) %>% 
     summarize(AirTemp = mean(OA_TempF, na.rm=T),
               ElecUse = sum(Energy_kWh, na.rm=T))
   
@@ -852,7 +850,7 @@ ElecUsage <- function(site, timestart, timeend){
     (max(tempdf$AirTemp, na.rm=T) - min(tempdf$AirTemp, na.rm=T))
   adj <- max(tempdf$ElecUse / scale_factor, na.rm=T) - max(tempdf$AirTemp, na.rm=T)
   
-  ggplot(tempdf, aes(x = date)) + 
+  ggplot(tempdf, aes(x = Date)) + 
     geom_line(size = 1, aes(y = ElecUse / scale_factor - adj, color="Electricity Usage")) +
     geom_line(size = 1, aes(y = AirTemp, color="Average Outdoor Temperature")) +
     geom_point(size=2, aes(y = ElecUse / scale_factor - adj), color="red") +
@@ -1072,7 +1070,7 @@ SupplyReturnTemp <- function(site, timestart, timeend){
 
 # Loop to print daily operation time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
-  for(d in unique(df$date[df$Site_ID==id])){
+  for(d in unique(df$Date[df$Site_ID==id])){
     d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
            plot = OperationTimeSeries(id, d, d1),
@@ -1084,7 +1082,7 @@ rm(d1,d,id)
 
 # Loop to print daily defrost time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
-  for(d in unique(df$date[df$Site_ID==id])){
+  for(d in unique(df$Date[df$Site_ID==id])){
     d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Defrost-Cycles_',d,'.png'),
            plot = DefrostCycleTimeSeries(id, d, d1),
