@@ -20,39 +20,40 @@ read_plus_michaels <- function(file) {fread(file) %>%
            Aux3_Power, Aux4_Power, OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, 
            SA2_RH, RA_TempF, RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, 
            Room2_RH, Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH) %>% 
-    mutate(filename=file)}
-read_plus <- function(file) {fread(file) %>% 
-    mutate(filename=file)}
+    # Modify filename so that it is the Site ID
+    mutate(Site_ID = substr(file, nchar(file)-20,nchar(file)-15)) %>%
+    filter(Site_ID %in% sites)}
+read_plus_e350 <- function(file) {fread(file) %>%
+  # Modify filename so that it is the Site ID
+  mutate(Site_ID = substr(file, 112, 117)) %>%
+  filter(Site_ID %in% sites)}
+read_plus_nrcan <- function(file) {fread(file) %>%
+    # Modify filename so that it is the Site ID
+    mutate(Site_ID = substr(filename, 108, 113)) %>%
+    filter(Site_ID %in% sites)}
+
+# Select sites to read
+sites <- c("4228VB", "6950NE")
 
 # Read Michaels/E350/NRCan data separately
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
   map_df(~read_plus_michaels(.)) %>% 
-  # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(filename, nchar(filename)-20,nchar(filename)-15)) %>%
   as.data.frame()
 
   # E350 data read one-minute and one-second data separately
 df_e350_min <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Minute"),pattern="*.csv", full.names=T) %>% 
-  map_df(~read_plus(.)) %>% 
-  # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(filename, 112, 117)) %>%
+  map_df(~read_plus_e350(.)) %>% 
   as.data.frame()
 df_e350_sec <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Second"),pattern="*.csv", full.names=T) %>% 
-  map_df(~read_plus(.)) %>% 
-  # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(filename, 112, 117)) %>%
+  map_df(~read_plus_e350(.)) %>% 
   as.data.frame()
 
   # NRCan data read one-minute and five-second separately
 df_nrcan_min <- list.files(path = paste0(wd, "/Raw Data/NRCan/1-Minute"),pattern="*.csv", full.names=T) %>% 
-  map_df(~read_plus(.)) %>% 
-  # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(filename, 108, 113)) %>%
+  map_df(~read_plus_nrcan(.)) %>% 
   as.data.frame()
 df_nrcan_sec <- list.files(path = paste0(wd, "/Raw Data/NRCan/5-Second"),pattern="*.csv", full.names=T) %>% 
-  map_df(~read_plus(.)) %>% 
-  # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(filename, 108, 113)) %>%
+  map_df(~read_plus_nrcan(.)) %>% 
   as.data.frame()
 
 
@@ -62,12 +63,13 @@ metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 # RV data from Trane
   # Note: Will need to pull site ID from filename if we get data from multiple sites.
 trane_rv <- list.files(path = paste0(wd, "/Trane-RV-Thermostat-data/TraneTech_Nampa"),pattern="*.csv", full.names=T) %>% 
-  map_df(~read_plus(.)) %>%
-  as.data.frame() %>% 
+  map_df(~fread(.)) %>%
+  as.data.frame() %>%
   mutate(Site_ID = "4228VB",
          Timestamp = as.POSIXct(strptime(DateTime, tz="US/Mountain", format="%m/%d/%Y %I:%M:%S %p") %>%
                                   with_tz(tzone="UTC"))) %>%
-  select(Site_ID, Timestamp, DEFROST_ON_1)
+  select(Site_ID, Timestamp, DEFROST_ON_1) %>%
+  filter(Site_ID %in% sites)
 
   
 
@@ -240,6 +242,8 @@ fillMissingTemp <- function(time, temp){
   }
   temp
 }
+  # These interpolations are starting to take significant amounts of time, and 
+  # there are a good number of them.
 df_e350$SA1_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA1_TempF)
 df_e350$SA2_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA2_TempF)
 df_e350$OA_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$OA_TempF)
@@ -330,6 +334,7 @@ rm(df_michaels, df_e350, df_nrcan)
   # multiple timezones, so need to read it in the local timezone, and then force
   # it into a character vector so that we have it in local time. This will be 
   # important for the daily summary graphs.
+  # This loop is a little slow.
 for(id in unique(df$Site_ID)){ 
   df$Date[df$Site_ID==id] <- date(df$Timestamp[df$Site_ID==id] %>% 
                                     with_tz(tzone=metadata$Timezone[metadata$Site_ID==id])) %>%
@@ -441,6 +446,7 @@ energyCalc <- function(site, timestamp, power){
   }
   energy    # Return energy vector as output
 }
+  # This energy calculation is very time consuming.
 df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$AHU_Power + df$HP_Power)
 
 
