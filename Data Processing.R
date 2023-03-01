@@ -9,7 +9,7 @@ library(stringr)
 # Set working library
   # As a string variable to make it easier to change to folders within directory
 wd <- "C:/Users/keen930/PNNL/CCHP - Project Management - Project Management/Data Analysis"
-wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/General/Field Demonstration (Task 2)/R Data Analysis"
+wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/Project Management/Data Analysis"
 
 # Read data
   # Read_csv (tidyverse) is crashing RStudio, trying fread (data.table) which is 
@@ -111,23 +111,23 @@ df_e350 <- merge(
   select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power),
   # Minute-level data
   df_e350_min %>% 
-    rename(OA_TempF=`OA_Temp [°F]`,
+    rename(OA_TempF=`OA_Temp [?F]`,
            OA_RH=`OA_RH [%]`,
-           SA1_TempF=`SA_Duct1_Temp [°F]`,
-           SA2_TempF=`SA_Duct2_Temp [°F]`,
+           SA1_TempF=`SA_Duct1_Temp [?F]`,
+           SA2_TempF=`SA_Duct2_Temp [?F]`,
            SA1_RH=`SA_Duct1_RH [%]`,
            SA2_RH=`SA_Duct2_RH [%]`,
-           RA_TempF=`RA_Temp [°F]`,
+           RA_TempF=`RA_Temp [?F]`,
            RA_RH=`RA_RH [%]`,
-           AHU_TempF=`AHU_Ambient_Temp [°F]`,
+           AHU_TempF=`AHU_Ambient_Temp [?F]`,
            AHU_RH=`AHU_RH [%]`,
-           Room1_TempF=`Room1_Temp [°F]`,
+           Room1_TempF=`Room1_Temp [?F]`,
            Room1_RH=`Room1_RH [%]`,
-           Room2_TempF=`Room2_Temp [°F]`,
+           Room2_TempF=`Room2_Temp [?F]`,
            Room2_RH=`Room2_RH [%]`,
-           Room3_TempF=`Room3_Temp [°F]`,
+           Room3_TempF=`Room3_Temp [?F]`,
            Room3_RH=`Room3_RH [%]`,
-           Room4_TempF=`Room4_Temp [°F]`,
+           Room4_TempF=`Room4_Temp [?F]`,
            Room4_RH=`Room4_RH [%]`) %>%
     select(Site_ID, Timestamp,
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 

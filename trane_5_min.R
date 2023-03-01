@@ -1,26 +1,24 @@
 #####################################################
 # Author: Samuel Rosenberg
 # Company: Pacific Northwest National Laboratory
-# Created on: 2023-02-01
+# Created on: 2023-02-24
 # Description: 
 #####################################################
 # Todo:
-# at some point data will get too large to do it this way.in future, we will 
-# need to run the hourly function and bind_rows() with existing hourly 
-# aggregated data because there is no need to do it over and over
 # 
-# maybe we add a "new" folder and an "old" folder and files are moved to "old"
-# after hourly agg is done
-#
-# integrate hourly agg into read so that it does the agg for each file, only
-# stores one csv at a time in memory
-#
-# reversing valve data?
-#
-# for date and hour - it's UTC, should we change? add "local date and time" cols?
+# 
+# 
 #####################################################
 ############ data import and processing #############
 #####################################################
+# Clear Workspace
+rm(list = ls())
+
+# packages
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+
 # Clear Workspace
 rm(list = ls())
 
@@ -52,21 +50,23 @@ for (i in 1:length(temp)) assign(temp[i], read_csv_homeID(temp[i]))
 
 # bind rows for each site
 #site 1 - 4228VB
-site_4228VB <- bind_rows(`4228VB_2022.12.19_Week51_1-minute.csv`, `4228VB_2022.12.26_Week52_minute.csv`,
-                `4228VB_2023.01.02_Week01_minute.csv`, `4228VB_2023.01.09_Week02_minute.csv`,
-                `4228VB_2023.01.16_Week03_minute.csv`, `4228VB_2023.01.23_Week04_minute.csv`,
-                `4228VB_2023.01.30_Week05_minute.csv`)
+site_4228VB <- bind_rows(`4228VB_2022.12.19_Week51_minute.csv`, `4228VB_2022.12.26_Week52_minute.csv`,
+                         `4228VB_2023.01.02_Week01_minute.csv`, `4228VB_2023.01.09_Week02_minute.csv`,
+                         `4228VB_2023.01.16_Week03_minute.csv`, `4228VB_2023.01.23_Week04_minute.csv`,
+                         `4228VB_2023.01.30_Week05_minute.csv`, `4228VB_2023.02.06_Week06_minute.csv`,
+                         `4228VB_2023.02.13_Week07_minute.csv`)
 #site 2 - 
 
 
 # function to aggregate dfs
 agg_dfs <- function(df, site, tz){
-  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data"
+  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/trane_5_min"
   setwd(path)
   column_names <- colnames(df)
+  df$`Timestamp (UTC)` <- as.POSIXct(df$`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M", tz = "UTC")
+  df$datetime_UTC <- floor_date(df$`Timestamp (UTC)`, "5 mins")
   df_agg <- df %>%
-    group_by("date_UTC" = as.Date(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M", tz = "UTC"),
-             "hour_of_day_UTC" = as.POSIXlt(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M", tz = "UTC")$hour) %>%
+    group_by(datetime_UTC) %>%
     summarise("HP_pwr_kW" = ifelse("HP_Power [kW]" %in% column_names == TRUE, mean(`HP_Power [kW]`, na.rm = T), NA),
               "fan_pwr_kW" = ifelse("Fan_Power [kW]" %in% column_names == TRUE, mean(`Fan_Power [kW]`, na.rm = T), NA),
               "AHU_pwr_kW" = ifelse("AHU_Power [kW]" %in% column_names == TRUE, mean(`AHU_Power [kW]`, na.rm = T), NA),
@@ -96,17 +96,15 @@ agg_dfs <- function(df, site, tz){
               "room4_temp_F" = ifelse("Room4_Temp [F]" %in% column_names == TRUE, mean(`Room4_Temp [F]`, na.rm = T), NA),
               "room4_RH" = ifelse("Room4_RH [%]" %in% column_names == TRUE, mean(`Room4_RH [%]`, na.rm = T), NA),
               "reversing_valve_signal_V" = ifelse("reversing_valve_signal_V" %in% column_names == TRUE, mean(`reversing_valve_signal_V`, na.rm = T), NA),
-              "seconds_non_zero_in_hour" = sum(`seconds`))
+              "seconds_non_zero_in_5min_period" = sum(`seconds`))
   df_agg <- as.data.frame(df_agg)
   df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
-  df_agg$datetime_UTC <- paste(df_agg$date_UTC, df_agg$hour_of_day_UTC)
-  df_agg$datetime_UTC <- as.POSIXct(df_agg$datetime_UTC, format = "%Y-%m-%d %H", tz = "UTC")
   df_agg$local_datetime <- format(df_agg$datetime_UTC, tz = tz, usetz = T)
   df_agg <- df_agg %>% relocate(datetime_UTC)
   df_agg <- df_agg %>% relocate(local_datetime)
-  df_agg <- subset(df_agg, select=-c(date_UTC, hour_of_day_UTC))
   # return(df_agg)
-  write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'), row.names = FALSE)
+  write.csv(df_agg, str_glue('{site}_aggregated_5_min.csv'), row.names = FALSE)
 }
 
 agg_dfs(site_4228VB, "4228VB", "US/Mountain")
+
