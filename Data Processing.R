@@ -20,20 +20,47 @@ read_plus_michaels <- function(file) {fread(file) %>%
            Aux3_Power, Aux4_Power, OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, 
            SA2_RH, RA_TempF, RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, 
            Room2_RH, Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH) %>% 
-    # Modify filename so that it is the Site ID
-    mutate(Site_ID = substr(file, nchar(file)-20,nchar(file)-15)) %>%
-    filter(Site_ID %in% sites)}
-read_plus_e350 <- function(file) {fread(file) %>%
-  # Modify filename so that it is the Site ID
-  mutate(Site_ID = substr(file, 112, 117)) %>%
-  filter(Site_ID %in% sites)}
+    mutate(Site_ID = substr(file, nchar(file)-20,nchar(file)-15),
+           Timestamp =  force_tz(index, tzone = "UTC")) %>%
+    filter(Site_ID %in% sites & 
+           Timestamp >= timeframe[1] &
+           Timestamp <= timeframe[2])}
+
+read_plus_e350_min <- function(file) {fread(file) %>%
+  mutate(Site_ID = substr(file, 112, 117),
+         Timestamp = as.POSIXct(strptime(`Timestamp (UTC)`, tz="UTC","%m/%d/%Y %H:%M"))) %>%
+    select(Site_ID, Timestamp,
+           `OA_Temp [°F]`,`OA_RH [%]`,`SA_Duct1_Temp [°F]`,`SA_Duct2_Temp [°F]`,
+           `SA_Duct1_RH [%]`,`SA_Duct2_RH [%]`,`RA_Temp [°F]`,`RA_RH [%]`,
+           `AHU_Ambient_Temp [°F]`,`AHU_RH [%]`,`Room1_Temp [°F]`,`Room1_RH [%]`,
+           `Room2_Temp [°F]`,`Room2_RH [%]`,`Room3_Temp [°F]`,`Room3_RH [%]`,
+           `Room4_Temp [°F]`,`Room4_RH [%]`) %>%
+  filter(Site_ID %in% sites &
+         Timestamp >= timeframe[1] &
+           Timestamp <= timeframe[2])
+  }
+read_plus_e350_sec <- function(file) {fread(file) %>%
+    mutate(Site_ID = substr(file, 112, 117),
+           Timestamp = as.POSIXct(strptime(`Timestamp (UTC)`, tz="UTC","%m/%d/%Y %H:%M:%S"))) %>%
+    select(Site_ID,
+           Timestamp,
+           `Reversing_Valve_Signal [VDC]`,
+           `HP_Power [kW]`,
+           `FanPower [kW]`,
+           `AHU_Power [kW]`,
+           `Aux_Heat_Power [kW]`) %>%
+    filter(Site_ID %in% sites & 
+             Timestamp >= timeframe[1] &
+             Timestamp <= timeframe[2])}
+
 read_plus_nrcan <- function(file) {fread(file) %>%
     # Modify filename so that it is the Site ID
     mutate(Site_ID = substr(filename, 108, 113)) %>%
     filter(Site_ID %in% sites)}
 
 # Select sites to read
-sites <- c("4228VB", "6950NE")
+sites <- c("2563EH", "2896BR", "4228VB", "5291QJ", "6950NE", "8220XE", "9944LD", "5539NO")
+timeframe <- c(strptime("1/30/2023", format="%m/%d/%Y", tz="UTC"), strptime("2/20/2023", format="%m/%d/%Y", tz="UTC"))
 
 # Read Michaels/E350/NRCan data separately
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
@@ -42,10 +69,10 @@ df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv
 
   # E350 data read one-minute and one-second data separately
 df_e350_min <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Minute"),pattern="*.csv", full.names=T) %>% 
-  map_df(~read_plus_e350(.)) %>% 
+  map_df(~read_plus_e350_min(.)) %>% 
   as.data.frame()
 df_e350_sec <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Second"),pattern="*.csv", full.names=T) %>% 
-  map_df(~read_plus_e350(.)) %>% 
+  map_df(~read_plus_e350_sec(.)) %>% 
   as.data.frame()
 
   # NRCan data read one-minute and five-second separately
@@ -69,26 +96,13 @@ trane_rv <- list.files(path = paste0(wd, "/Trane-RV-Thermostat-data/TraneTech_Na
          Timestamp = as.POSIXct(strptime(DateTime, tz="US/Mountain", format="%m/%d/%Y %I:%M:%S %p") %>%
                                   with_tz(tzone="UTC"))) %>%
   select(Site_ID, Timestamp, DEFROST_ON_1) %>%
-  filter(Site_ID %in% sites)
+  filter(Site_ID %in% sites &
+           Timestamp >= timeframe[1] &
+           Timestamp <= timeframe[2])
 
   
 
 
-# Convert timestamp from UTC to local time zone
-  # Michaels sites are coming in UTC, E350 data is in local time zone
-  # I think the best solution is to convert all to UTC so that there aren't any
-  # issues binding the data that is stored in multiple timezones.
-  # I added a field to the meta data ("Timezone") which will have the local timezone
-  # for each site.
-
-# Michaels data
-  # data.table automatically converted the timestamp to POSIXct, so just need to force TZ
-df_michaels$Timestamp <- df_michaels$index %>% force_tz(tzone = "UTC")
-
-# Energy 350 data (1-minute and 1-second)
-  # Convert to POSIXct and force TZ to UTC
-df_e350_min$Timestamp = as.POSIXct(strptime(df_e350_min$`Timestamp (UTC)`, tz="UTC","%m/%d/%Y %H:%M"))
-df_e350_sec$Timestamp = as.POSIXct(strptime(df_e350_sec$`Timestamp (UTC)`, tz="UTC","%m/%d/%Y %H:%M:%S"))
 
 # NRCan data (1-minute and 5-second)
   # Convert to POSIXct and force TZ to US/Eastern (local), then change to UTC
@@ -107,8 +121,7 @@ df_e350 <- merge(
          Fan_Power=`FanPower [kW]`,
          AHU_Power=`AHU_Power [kW]`,
          Aux_Power=`Aux_Heat_Power [kW]`) %>%
-  filter(!is.na(Timestamp)) %>%
-  select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power),
+  filter(!is.na(Timestamp)),
   # Minute-level data
   df_e350_min %>% 
     rename(OA_TempF=`OA_Temp [?F]`,
@@ -127,30 +140,40 @@ df_e350 <- merge(
            Room2_RH=`Room2_RH [%]`,
            Room3_TempF=`Room3_Temp [?F]`,
            Room3_RH=`Room3_RH [%]`,
+<<<<<<< HEAD
            Room4_TempF=`Room4_Temp [?F]`,
            Room4_RH=`Room4_RH [%]`) %>%
     select(Site_ID, Timestamp,
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
            RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
            Room3_TempF, Room3_RH, Room4_TempF, Room4_RH),
+=======
+           Room4_TempF=`Room4_Temp [°F]`,
+           Room4_RH=`Room4_RH [%]`),
+>>>>>>> 5142c3a579252b6d9d75e1102752070c536bd08e
   by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>% 
     # Merge in Trane RV data
   merge(trane_rv, by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>%
   arrange(Site_ID, Timestamp) %>%
   mutate(SA3_TempF = NA, SA3_RH = NA, SA4_TempF = NA, SA4_RH = NA)
 
+rm(df_e350_min, df_e350_sec)
 
   # Trane data is every four seconds, so need to fill in gaps to defrost mode
+  # This loop takes a long time for me, even though there is only one E350 site (4228VB)
+  # This won't work once we get non-Trane E350 sites... need to interpolate data
+  # before merging to E350.
 for(row in 2:length(df_e350$DEFROST_ON_1)){
   if(df_e350$Timestamp[row] < trane_rv$Timestamp[1] | 
-     df_e350$Timestamp[row] > trane_rv$Timestamp[nrow(trane_rv)]){
+     df_e350$Timestamp[row] > trane_rv$Timestamp[nrow(trane_rv)] |
+     !is.na(df_e350$DEFROST_ON_1[row])){
     next
-  } else if(is.na(df_e350$DEFROST_ON_1[row])) {
+  } else {
     df_e350$DEFROST_ON_1[row] <- df_e350$DEFROST_ON_1[row-1]
   }
 }
 
-rm(df_e350_min, df_e350_sec, trane_rv)
+rm(trane_rv)
 
 
 ## Merge NRCan dataframes together into one and clean
@@ -196,7 +219,9 @@ df_e350 <- df_e350 %>%
   filter(Site_ID != "4228VB" | Timestamp >= strptime("2022-12-22", "%Y-%m-%d", tz="US/Mountain")) %>%
     # December 30th 18:00 to January 2nd 18:00, the HP Power, and possibly at times Aux Power, is missing or too low to be reasonable. 
   filter(Site_ID != "4228VB" | Timestamp <= strptime("2022-12-30", "%Y-%m-%d", tz="US/Mountain") |
-    Timestamp >= strptime("2023-01-03", "%Y-%m-%d", tz="US/Mountain")) 
+    Timestamp >= strptime("2023-01-03", "%Y-%m-%d", tz="US/Mountain")) %>%
+    # Site 5539NO missing OAT and maybe aux power before Feb 15, 2023
+  filter(Site_ID != "5539NO" | Timestamp >= strptime("2023-02-15", "%Y-%m-%d", tz="US/Eastern"))
 
 df_michaels <- df_michaels %>%
   # Site 8220XE:
@@ -224,7 +249,7 @@ df_michaels <- df_michaels %>%
 
 
 
-# Fill in missing temperature data for E350 data (only minute level)
+# Fill in missing temperature data for E350 data (only have minute level)
   # Assumes minute data (when seconds are zero) has temperature data and
   # second data is missing it.
   # Important that the data is sorted by site and then timestamp, which it should be.
@@ -317,7 +342,7 @@ df_nrcan <- df_nrcan %>% mutate(
 # Row bind all data together
 df <- rbind(
   df_e350,
-  df_nrcan,
+  # df_nrcan,
   df_michaels %>% 
     select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
@@ -717,14 +742,14 @@ OperationTimeSeries <- function(site, timestart, timeend){
              Timestamp >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=OA_TempF/10, color = "Outdoor Temperature"),size=0.3) + 
-    geom_line(aes(y=SA_TempF/10, color = "Supply Temperature"),size=0.3) +
+    geom_line(aes(y=OA_TempF/7, color = "Outdoor Air Temperature"),size=0.3) + 
+    geom_line(aes(y=SA_TempF/7, color = "Supply Air Temperature"),size=0.3) +
     geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
     geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) +
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
-                       limits = c(-2.5, 16),
-                       sec.axis = sec_axis(~.*10, name ="SA/OA Temperature (F)")) +
+                       limits = c(-4, 21),
+                       sec.axis = sec_axis(~.*7, name ="Temperature (F)")) +
     scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "gray", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
     labs(title=paste0("System operation time series plot for site ", site),x="") +
     theme_bw() +
@@ -736,7 +761,7 @@ OperationTimeSeries <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# OperationTimeSeries("2563EH", "2023-01-10", "2023-01-12")
+# OperationTimeSeries("6950NE", "2022-12-21", "2022-12-22")
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
