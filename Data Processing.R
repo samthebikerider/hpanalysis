@@ -150,17 +150,12 @@ df_e350 <- merge(
            Room2_RH=`Room2_RH [%]`,
            Room3_TempF=`Room3_Temp [?F]`,
            Room3_RH=`Room3_RH [%]`,
-<<<<<<< HEAD
            Room4_TempF=`Room4_Temp [?F]`,
            Room4_RH=`Room4_RH [%]`) %>%
     select(Site_ID, Timestamp,
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
            RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
            Room3_TempF, Room3_RH, Room4_TempF, Room4_RH),
-=======
-           Room4_TempF=`Room4_Temp [°F]`,
-           Room4_RH=`Room4_RH [%]`),
->>>>>>> 5142c3a579252b6d9d75e1102752070c536bd08e
   by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>% 
     # Merge in Trane RV data
   merge(trane_rv, by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>%
