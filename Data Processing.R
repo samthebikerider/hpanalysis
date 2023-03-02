@@ -30,11 +30,11 @@ read_plus_e350_min <- function(file) {fread(file) %>%
   mutate(Site_ID = substr(file, 112, 117),
          Timestamp = as.POSIXct(strptime(`Timestamp (UTC)`, tz="UTC","%m/%d/%Y %H:%M"))) %>%
     select(Site_ID, Timestamp,
-           `OA_Temp [?F]`,`OA_RH [%]`,`SA_Duct1_Temp [?F]`,`SA_Duct2_Temp [?F]`,
-           `SA_Duct1_RH [%]`,`SA_Duct2_RH [%]`,`RA_Temp [?F]`,`RA_RH [%]`,
-           `AHU_Ambient_Temp [?F]`,`AHU_RH [%]`,`Room1_Temp [?F]`,`Room1_RH [%]`,
-           `Room2_Temp [?F]`,`Room2_RH [%]`,`Room3_Temp [?F]`,`Room3_RH [%]`,
-           `Room4_Temp [?F]`,`Room4_RH [%]`) %>%
+           `OA_Temp [°F]`,`OA_RH [%]`,`SA_Duct1_Temp [°F]`,`SA_Duct2_Temp [°F]`,
+           `SA_Duct1_RH [%]`,`SA_Duct2_RH [%]`,`RA_Temp [°F]`,`RA_RH [%]`,
+           `AHU_Ambient_Temp [°F]`,`AHU_RH [%]`,`Room1_Temp [°F]`,`Room1_RH [%]`,
+           `Room2_Temp [°F]`,`Room2_RH [%]`,`Room3_Temp [°F]`,`Room3_RH [%]`,
+           `Room4_Temp [°F]`,`Room4_RH [%]`) %>%
   filter(Site_ID %in% sites &
          Timestamp >= timeframe[1] &
            Timestamp <= timeframe[2])
