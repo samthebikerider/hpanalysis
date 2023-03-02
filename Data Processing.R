@@ -5,6 +5,7 @@ rm(list=ls())
 library(tidyverse)
 library(lubridate)
 library(stringr)
+library(data.table)
 
 # Set working library
   # As a string variable to make it easier to change to folders within directory
@@ -14,7 +15,6 @@ wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/Genera
 # Read data
   # Read_csv (tidyverse) is crashing RStudio, trying fread (data.table) which is 
   # supposed to be better with large files
-library(data.table)
 read_plus_michaels <- function(file) {fread(file) %>% 
     select(index, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux1_Power, Aux2_Power, 
            Aux3_Power, Aux4_Power, OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, 
@@ -59,8 +59,9 @@ read_plus_nrcan <- function(file) {fread(file) %>%
     filter(Site_ID %in% sites)}
 
 # Select sites to read
-sites <- c("2563EH", "2896BR", "4228VB", "5291QJ", "6950NE", "8220XE", "9944LD", "5539NO")
-timeframe <- c(strptime("1/30/2023", format="%m/%d/%Y", tz="UTC"), strptime("2/20/2023", format="%m/%d/%Y", tz="UTC"))
+sites <- c("5539NO")
+# sites <- c("2563EH", "2896BR", "4228VB", "5291QJ", "6950NE", "8220XE", "9944LD", "5539NO")
+timeframe <- c(strptime("1/30/2022", format="%m/%d/%Y", tz="UTC"), strptime("2/20/2023", format="%m/%d/%Y", tz="UTC"))
 
 # Read Michaels/E350/NRCan data separately
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
@@ -87,7 +88,7 @@ df_nrcan_sec <- list.files(path = paste0(wd, "/Raw Data/NRCan/5-Second"),pattern
 # Metadata file to append time zone and other characteristics
 metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 
-# RV data from Trane
+# RV data from Trane for Site 4228VB
   # Note: Will need to pull site ID from filename if we get data from multiple sites.
 trane_rv <- list.files(path = paste0(wd, "/Trane-RV-Thermostat-data/TraneTech_Nampa"),pattern="*.csv", full.names=T) %>% 
   map_df(~fread(.)) %>%
@@ -98,8 +99,17 @@ trane_rv <- list.files(path = paste0(wd, "/Trane-RV-Thermostat-data/TraneTech_Na
   select(Site_ID, Timestamp, DEFROST_ON_1) %>%
   filter(Site_ID %in% sites &
            Timestamp >= timeframe[1] &
-           Timestamp <= timeframe[2])
-
+           Timestamp <= timeframe[2]) %>%
+  unique()
+# Trane RV data investigation
+trane_NA_summary_table <- trane_rv %>%
+  group_by(Site_ID, date(with_tz(Timestamp, tzone="US/Mountain"))) %>%
+  summarize(Perc_NA_values = round(sum(is.na(DEFROST_ON_1))*100/ n(), 1),
+            Perc_complete_1sec_data = round(n()*100 / 86400, 1),
+            Perc_duplicated = round(100 - length(unique(Timestamp))*100 / n(), 1))
+write.csv(trane_NA_summary_table, 
+          file=paste0(wd, "/Graphs/Trane_RV_Data_Summary.csv"),
+          row.names=F)
   
 
 
@@ -150,14 +160,12 @@ df_e350 <- merge(
 
 rm(df_e350_min, df_e350_sec)
 
-  # Trane data is every four seconds, so need to fill in gaps to defrost mode
-  # This loop takes a long time for me, even though there is only one E350 site (4228VB)
-  # This won't work once we get non-Trane E350 sites... need to interpolate data
-  # before merging to E350.
+  # Trane data is every four seconds for site 4228VB, so need to fill in gaps to defrost mode
 for(row in 2:length(df_e350$DEFROST_ON_1)){
   if(df_e350$Timestamp[row] < trane_rv$Timestamp[1] | 
      df_e350$Timestamp[row] > trane_rv$Timestamp[nrow(trane_rv)] |
-     !is.na(df_e350$DEFROST_ON_1[row])){
+     !is.na(df_e350$DEFROST_ON_1[row]) |
+     df_e350$Site_ID != "4228VB"){
     next
   } else {
     df_e350$DEFROST_ON_1[row] <- df_e350$DEFROST_ON_1[row-1]
@@ -303,26 +311,24 @@ df_michaels <- df_michaels %>% mutate(
                           "Heating-Off"))),
                               "Defrost"))
 
-  # For Energy350: DC Voltage signal to heat pump reversing valve. +1.5 should 
-  # equal no signal. A -12V pulse (900 ms) is expected for cooling signal and a 
-  # +3V pulse (900 ms) is expected for heating signal.
-  # However, the pulse seems to be too short to be picked up consistently at the
-  # 1-second level, so need to use other indicators to determine defrost mode:
-    #	Heat pump power between 0.25-1.0 kW [Edit: loosening to 0.2-1.5kW to catch defrost mode sooner]
-    #	Fan power greater than 0.30 kW
-    #	Aux heat greater than 4kW [Edit: loosening to 0.1 kW to catch defrost mode sooner]
-  # When exiting defrost mode, HP power will exit that range, and aux power should
-  # drop to 0 kW, or nearly 0 kW (it may be possible aux continues if HP can't 
-  # support load, but that is unlikely in the temp ranges we expect to see defrosting).
-  # A loop is necessary:
+  # For Energy350: "~24V is expected when reversing valve is in heating position"
+    # For 4228VB, the pulse seems to be too short to be picked up consistently at the
+    # 1-second level, so need to use dataset provided by Trane with "DEFROST_ON_1"
 df_e350 <- df_e350 %>% mutate(
-  Operating_Mode = ifelse(DEFROST_ON_1==1 & HP_Power > 0.1, "Defrost",
-    # ifelse(HP_Power > 0.25 & HP_Power < 1 & Fan_Power > 0.3 & Aux_Power > 0.1, 
-    #                       "Defrost",
-                    ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
-                    ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
-                    ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                          "Heating-Off"))))) %>%
+  Operating_Mode = 
+    # Site 4228VB has different logic than other E350 sites
+    ifelse(Site_ID == "4228VB",
+           ifelse(DEFROST_ON_1==1 & HP_Power > 0.1, "Defrost",
+                  ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
+                         ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
+                                ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
+                          "Heating-Off")))),
+    # Logic for non-4228VB sites
+           ifelse(RV_Volts > 20 & HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
+                  ifelse(RV_Volts > 20 & HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
+                      ifelse(RV_Volts > 20 & HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
+                             ifelse(HP_Power < 0.1 & Aux_Power < 0.1, "Heating-Off",
+                                    "Defrost")))))) %>%
   select(-DEFROST_ON_1)
 
 df_nrcan <- df_nrcan %>% mutate(
@@ -370,7 +376,12 @@ df <- df %>% mutate(
   SA_RH = rowMeans(cbind(SA1_RH, SA2_RH, SA3_RH, SA4_RH), na.rm=T),
   SA_TempF = rowMeans(cbind(SA1_TempF, SA2_TempF, SA3_TempF, SA4_TempF), na.rm=T))
 
-
+  # Add column that determines the number of aux legs (when not in defrost mode)
+df <- df %>% mutate(
+  Number_Aux_Legs = ifelse(Operating_Mode == "Defrost" | Aux_Power < 0.1, NA,
+                           ifelse(Aux_Power > 19, 4,
+                                  ifelse(Aux_Power > 14, 3,
+                                         ifelse(Aux_Power > 9, 2, 1)))))
 
 # Calculate heat and defrost run cycle duration for heat pump.
   # The "mode" input should be "Heating" or "Defrost".
@@ -430,7 +441,10 @@ fan_power_curve <- function(fan_power, siteid){
                          ifelse(siteid=="4228VB", 1647.7 * fan_power^0.394,
                          ifelse(siteid=="9944LD", 115.09 * (fan_power*1000)^0.3926,
                          ifelse(siteid=="2563EH", 169.1 * (fan_power*1000)^0.2978,
-                                    NA)))))
+                         ifelse(siteid=="2896BR", 108.64 * (fan_power*1000)^0.4405,
+                         ifelse(siteid=="6112OH", 98.457 * (fan_power*1000)^0.4346,
+                         ifelse(siteid=="7083LM", 120.66 * (fan_power*1000)^0.3657,
+                                    NA))))))))
 }
 df$supply_flow_rate_CFM <- fan_power_curve(df$Fan_Power, df$Site_ID)
 
@@ -693,7 +707,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
   # as compared to HP, Aux, and Fan power and SA temperature
   # The time start and end should be character with format "%Y-%m-%d".
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
-                Defrost = ifelse(Operating_Mode=="Defrost", 5, NA)) %>% 
+                Defrost = RV_Volts) %>% 
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
@@ -704,7 +718,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
     geom_point(aes(y=Defrost, color = "Defrost Mode On"),size=2) + 
     geom_point(aes(y=Defrost_Cycle_Runtimes/2, color = "Defrost Cycle Length"),size=3,shape=8) +
     scale_y_continuous(name = "Power (kW)",
-                       limits = c(-0.5, 11),
+                       limits = c(-0.5, 21),
                        sec.axis = sec_axis(~.*2, name ="Defrost Cycle Length (mins)")) +
     scale_color_manual(name = "", breaks = c("Auxiliary Power","Heat Pump Power","Fan Power","Defrost Mode On","Defrost Cycle Length"),
                        values = c("#E69F00", "black", "#56B4E9","#009E73", "#CC79A7", "gray", "#F0E442", "#0072B2", "#D55E00")) +
@@ -720,7 +734,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   size=c(1,1,1,3,3),
                                                   linetype=c(1,1,1,NA,NA))))
 }
-# DefrostCycleTimeSeries("4228VB", "2022-12-23", "2022-12-24")
+DefrostCycleTimeSeries("5539NO", "2023-02-17", "2023-02-19")
 
 
 # Power time series comparison chart with OAT and SAT
@@ -733,14 +747,14 @@ OperationTimeSeries <- function(site, timestart, timeend){
              Timestamp >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=OA_TempF/7, color = "Outdoor Air Temperature"),size=0.3) + 
-    geom_line(aes(y=SA_TempF/7, color = "Supply Air Temperature"),size=0.3) +
+    geom_line(aes(y=OA_TempF/5, color = "Outdoor Air Temperature"),size=0.3) + 
+    geom_line(aes(y=SA_TempF/5, color = "Supply Air Temperature"),size=0.3) +
     geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
     geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) +
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
-                       limits = c(-4, 21),
-                       sec.axis = sec_axis(~.*7, name ="Temperature (F)")) +
+                       limits = c(-4, 25),
+                       sec.axis = sec_axis(~.*5, name ="Temperature (F)")) +
     scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "gray", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
     labs(title=paste0("System operation time series plot for site ", site),x="") +
     theme_bw() +
