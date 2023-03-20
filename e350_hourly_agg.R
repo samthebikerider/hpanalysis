@@ -52,11 +52,15 @@ for (i in 1:length(temp)) assign(temp[i], read_csv_homeID(temp[i]))
 
 # bind rows for each site
 #site 1 - 4228VB
-site_4228VB <- bind_rows(`4228VB_2022.12.19_Week51_1-minute.csv`, `4228VB_2022.12.26_Week52_minute.csv`,
-                `4228VB_2023.01.02_Week01_minute.csv`, `4228VB_2023.01.09_Week02_minute.csv`,
-                `4228VB_2023.01.16_Week03_minute.csv`, `4228VB_2023.01.23_Week04_minute.csv`,
-                `4228VB_2023.01.30_Week05_minute.csv`)
-#site 2 - 
+site_4228VB <- bind_rows(`4228VB_2022.12.19_Week51_minute.csv`, `4228VB_2022.12.26_Week52_minute.csv`,
+                         `4228VB_2023.01.02_Week01_minute.csv`, `4228VB_2023.01.09_Week02_minute.csv`,
+                         `4228VB_2023.01.16_Week03_minute.csv`, `4228VB_2023.01.23_Week04_minute.csv`,
+                         `4228VB_2023.01.30_Week05_minute.csv`, `4228VB_2023.02.06_Week06_minute.csv`,
+                         `4228VB_2023.02.13_Week07_minute.csv`, `4228VB_2023.02.20_Week08_minute.csv`,
+                         `4228VB_2023.02.27_Week09_minute.csv`)
+#site 2 - 5539NO
+site_5539NO <- bind_rows(`5539NO_2023.02.13_Week07_minute.csv`, `5539NO_2023.02.20_Week08_minute.csv`,
+                         `5539NO_2023.02.27_Week09_minute.csv`)
 
 
 # function to aggregate dfs
@@ -64,6 +68,7 @@ agg_dfs <- function(df, site, tz){
   path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data"
   setwd(path)
   column_names <- colnames(df)
+  name_file <- str_glue('{site}_aggregated_hourly.csv')
   df_agg <- df %>%
     group_by("date_UTC" = as.Date(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M", tz = "UTC"),
              "hour_of_day_UTC" = as.POSIXlt(`Timestamp (UTC)`, format = "%m/%d/%Y %H:%M", tz = "UTC")$hour) %>%
@@ -106,7 +111,8 @@ agg_dfs <- function(df, site, tz){
   df_agg <- df_agg %>% relocate(local_datetime)
   df_agg <- subset(df_agg, select=-c(date_UTC, hour_of_day_UTC))
   # return(df_agg)
-  write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'), row.names = FALSE)
+  write.csv(df_agg, name_file, row.names = FALSE)
 }
 
 agg_dfs(site_4228VB, "4228VB", "US/Mountain")
+agg_dfs(site_5539NO, "5539NO", "US/Eastern")

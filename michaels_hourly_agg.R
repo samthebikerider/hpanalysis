@@ -6,33 +6,6 @@
 #####################################################
 # Todo:
 # 
-# 4 SA and 3 room temps
-# 
-#####################################################
-############ data import and processing #############
-#####################################################
-# Clear Workspace
-rm(list = ls())
-
-# packages
-library(tidyverse)
-library(zoo)
-library(xts)
-
-# set wd, read data
-path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/Raw Data/"
-michaels_path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/Raw Data/Michaels"
-
-setwd(path)
-
-#####################################################
-# Author: Samuel Rosenberg
-# Company: Pacific Northwest National Laboratory
-# Created on: 2023-02-01
-# Description: 
-#####################################################
-# Todo:
-# 
 # 
 # 
 #####################################################
@@ -72,16 +45,26 @@ for (i in 1:length(temp)) assign(temp[i], read_csv_homeID(temp[i]))
 site_6950NE <- bind_rows(`PNNL_ccASHP__6950NE_2022-12-19.csv`, `PNNL_ccASHP__6950NE_2023-01-03.csv`,
                          `PNNL_ccASHP__6950NE_2023-01-09.csv`, `PNNL_ccASHP__6950NE_2023-01-16.csv`,
                          `PNNL_ccASHP__6950NE_2023-01-23.csv`, `PNNL_ccASHP__6950NE_2023-02-01.csv`,
-                         `PNNL_ccASHP__6950NE_2023-02-07.csv`)
+                         `PNNL_ccASHP__6950NE_2023-02-07.csv`, `PNNL_ccASHP__6950NE_2023-02-14.csv`)
+
 site_8820XE <- bind_rows(`PNNL_ccASHP__8220XE_2022-12-19.csv`, `PNNL_ccASHP__8220XE_2023-01-03.csv`,
                          `PNNL_ccASHP__8220XE_2023-01-09.csv`, `PNNL_ccASHP__8220XE_2023-01-16.csv`,
                          `PNNL_ccASHP__8220XE_2023-01-23.csv`, `PNNL_ccASHP__8220XE_2023-02-01.csv`,
-                         `PNNL_ccASHP__8220XE_2023-02-07.csv`)
+                         `PNNL_ccASHP__8220XE_2023-02-07.csv`, `PNNL_ccASHP__8220XE_2023-02-14.csv`)
+
 site_9944LD <- bind_rows(`PNNL_ccASHP__9944LD_2023-01-09.csv`, `PNNL_ccASHP__9944LD_2023-01-16.csv`,
                          `PNNL_ccASHP__9944LD_2023-01-23.csv`, `PNNL_ccASHP__9944LD_2023-02-01.csv`,
-                         `PNNL_ccASHP__9944LD_2023-02-07.csv`)
-site_2563EH <- bind_rows(`PNNL_ccASHP__2563EH_2023-02-01.csv`, `PNNL_ccASHP__2563EH_2023-02-07.csv`)
-site_2896BR <- bind_rows(`PNNL_ccASHP__2896BR_2023-02-01.csv`, `PNNL_ccASHP__2896BR_2023-02-07.csv`)
+                         `PNNL_ccASHP__9944LD_2023-02-07.csv`, `PNNL_ccASHP__9944LD_2023-02-14.csv`)
+
+site_2563EH <- bind_rows(`PNNL_ccASHP__2563EH_2023-02-01.csv`, `PNNL_ccASHP__2563EH_2023-02-07.csv`,
+                         `PNNL_ccASHP__2563EH_2023-02-14.csv`)
+
+site_2896BR <- bind_rows(`PNNL_ccASHP__2896BR_2023-02-01.csv`, `PNNL_ccASHP__2896BR_2023-02-07.csv`,
+                         `PNNL_ccASHP__2896BR_2023-02-14.csv`)
+
+site_6112OH <- bind_rows(`PNNL_ccASHP__6112OH_2023-02-14.csv`)
+
+site_8726VB <- bind_rows(`PNNL_ccASHP__8726VB_2023-02-14.csv`)
 
 # function to aggregate dfs
 agg_dfs <- function(df, site, tz){
@@ -134,7 +117,7 @@ agg_dfs <- function(df, site, tz){
 
 agg_dfs(site_6950NE, "6950NE", "US/Central")
 agg_dfs(site_8820XE, "8820XE", "US/Central")
-agg_dfs(site_6950NE, "9944LD", "US/Mountain")
+agg_dfs(site_9944LD, "9944LD", "US/Mountain")
 agg_dfs(site_2563EH, "2563EH", "US/Eastern")
 agg_dfs(site_2896BR, "2896BR", "US/Eastern")
 
