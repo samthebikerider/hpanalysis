@@ -104,14 +104,14 @@ read_plus_nrcan_min <- function(file) {fread(file) %>%
 sites <- c(
            # "2563EH", 
            # "2896BR", 
-           # "4228VB",
-           "5291QJ",
+           "4228VB",
+           # "5291QJ",
            # "6950NE", 
            # "8220XE", 
            # "9944LD", 
            # "5539NO",
            "")
-timeframe <- c(strptime("1/01/2023", format="%m/%d/%Y", tz="UTC"), strptime("3/20/2023", format="%m/%d/%Y", tz="UTC"))
+timeframe <- c(strptime("1/10/2023", format="%m/%d/%Y", tz="UTC"), strptime("3/20/2023", format="%m/%d/%Y", tz="UTC"))
 
 # Read Michaels/E350/NRCan data separately
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
@@ -140,6 +140,8 @@ metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 
 # RV data from Trane for Site 4228VB
   # Note: Will need to pull site ID from filename if we get data from multiple sites.
+  # This takes a little while, but could be sped up by creating a function that can filter
+    # during each CSV reading instead of pulling all the data then filtering at the end.
 trane_rv <- list.files(path = paste0(wd, "/Trane-RV-Thermostat-data/TraneTech_Nampa"),pattern="*.csv", full.names=T) %>% 
   map_df(~fread(.)) %>%
   as.data.frame() %>%
@@ -197,30 +199,32 @@ rm(df_e350_min, df_e350_sec)
   # Trane RV data is every four seconds for site 4228VB, so need to fill in gaps to defrost mode
     # There is some missing data, so we need to add a counter as to not interpolate
     # more than four missing rows in a row.
-trane_defrost_interp <- function(time, defrost_on, site){
-  counter = 0
-  for(row in 2:length(time)){
-    if(time[row] < trane_rv$Timestamp[1] | 
-       time[row] > trane_rv$Timestamp[nrow(trane_rv)] |
-       site[row] != "4228VB"){
-      # If outside of trane_rv time range or not the 4228VB site, skip
-      next
-    } else if (!is.na(defrost_on[row])){
-      # If is not NA, leave row as is and reset counter
-      counter = 0
-    } else if (counter >= 4){
-      # If counter is greater than or equal to four seconds, then keep skipping until we get a non-NA row
-      next
-    } else {
-      df_e350$DEFROST_ON_1[row] <- df_e350$DEFROST_ON_1[row-1]
-      counter = counter + 1
-    }
-  }
-}
+# trane_defrost_interp <- function(time, defrost_on, site){
+#   counter = 0
+#   for(row in 2:length(time)){
+#     if(time[row] < trane_rv$Timestamp[1] | 
+#        time[row] > trane_rv$Timestamp[nrow(trane_rv)] |
+#        site[row] != "4228VB"){
+#       # If outside of trane_rv time range or not the 4228VB site, skip
+#       next
+#     } else if (!is.na(defrost_on[row])){
+#       # If is not NA, leave row as is and reset counter
+#       counter = 0
+#     } else if (counter >= 4){
+#       # If counter is greater than or equal to four seconds, then keep skipping until we get a non-NA row
+#       next
+#     } else {
+#       df_e350$DEFROST_ON_1[row] <- df_e350$DEFROST_ON_1[row-1]
+#       counter = counter + 1
+#     }
+#   }
+# }
 # This function is taking way too long for me, so I'm making a much faster
 # group_by option, not quite as accurate but I think good enough for our purposes.
   #df_e350$DEFROST_ON_1 <- trane_defrost_interp(df_e350$Timestamp, df_e350$DEFROST_ON_1, df_e350$Site_ID)
-df_e350 <- df_e350 %>% group_by(Site_ID, Break=cut(Timestamp, breaks="5 secs")) %>%
+# Ideally, we would do 4-5 second breaks, but with data sometimes reporting less frequently,
+  # 20 second breaks are safer for not missing any defrost points.
+df_e350 <- df_e350 %>% group_by(Site_ID, Break=cut(Timestamp, breaks="20 secs")) %>%
   mutate(DEFROST_ON_1=ceiling(mean(DEFROST_ON_1, na.rm=T))) %>% ungroup() %>%
   select(-Break)
 
@@ -292,36 +296,48 @@ df_michaels <- df_michaels %>%
 
 
 
-# Fill in missing temperature data for E350 data (only have minute level)
-  # Assumes minute data (when seconds are zero) has temperature data and
-  # second data is missing it.
+# Fill in missing temperature data for E350 and NRCan data (only have minute level)
+  # Minute data (when seconds are zero) has temperature data and every second between minutes is NA.
   # Important that the data is sorted by site and then timestamp, which it should be.
-fillMissingTemp <- function(time, temp){
-  t = NA # Initialize temperature counter
-  
-  for(row in 1:length(time)){
-    if(second(time[row])==0){
-    # At the minute level, make a record of the temperatures
-      t = temp[row]
-    } else {
-    # And for all other data, record as the stored value
-      temp[row] = t
-    }
-  }
-  temp
-}
-  # These interpolations are starting to take significant amounts of time, and 
-  # there are a good number of them.
-df_e350$SA1_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA1_TempF)
-df_e350$SA2_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA2_TempF)
-df_e350$OA_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$OA_TempF)
-df_e350$RA_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$RA_TempF)
-df_e350$SA1_RH <- fillMissingTemp(df_e350$Timestamp, df_e350$SA1_RH)
-df_e350$SA2_RH <- fillMissingTemp(df_e350$Timestamp, df_e350$SA2_RH)
+  # The first process with a loop was taking too much time so I commented it out
+  # and used grouping to make it faster.
+# fillMissingTemp <- function(time, temp){
+#   t = NA # Initialize temperature counter
+#   
+#   for(row in 1:length(time)){
+#     if(second(time[row])==0){
+#     # At the minute level, make a record of the temperatures
+#       t = temp[row]
+#     } else {
+#     # And for all other data, record as the stored value
+#       temp[row] = t
+#     }
+#   }
+#   temp
+# }
+# df_e350$SA1_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA1_TempF)
+
+df_e350 <- df_e350 %>% 
+  group_by(Site_ID, Break=cut(Timestamp, breaks="1 hour")) %>%
+  mutate(SA1_TempF=mean(SA1_TempF, na.rm=T),
+         SA2_TempF=mean(SA2_TempF, na.rm=T),
+         OA_TempF=mean(OA_TempF, na.rm=T),
+         RA_TempF=mean(RA_TempF, na.rm=T),
+         SA1_RH=mean(SA1_RH, na.rm=T),
+         SA2_RH=mean(SA2_RH, na.rm=T)) %>% 
+  ungroup() %>%
+  select(-Break)
+
+  # NRCan
 # Note: Only two SA monnits at the first site, but future sites may have four.
-df_nrcan$SA1_TempF <- fillMissingTemp(df_nrcan$Timestamp, df_nrcan$SA1_TempF)
-df_nrcan$SA1_RH <- fillMissingTemp(df_nrcan$Timestamp, df_nrcan$SA1_RH)
-df_nrcan$RA_TempF <- fillMissingTemp(df_nrcan$Timestamp, df_nrcan$RA_TempF)
+df_nrcan <- df_nrcan %>% 
+  group_by(Site_ID, Break=cut(Timestamp, breaks="1 hour")) %>%
+  mutate(SA1_TempF=mean(SA1_TempF, na.rm=T),
+         SA1_RH=mean(SA1_RH, na.rm=T),
+         RA_TempF=mean(RA_TempF, na.rm=T)) %>% 
+  ungroup() %>%
+  select(-Break)
+
 
 
 ## Operating mode and defrost cycles ##
@@ -363,13 +379,19 @@ df_e350 <- df_e350 %>% mutate(
   Operating_Mode = 
     # Site 4228VB has different logic than other E350 sites
     ifelse(Site_ID == "4228VB",
-           ifelse(
-             DEFROST_ON_1==1 & HP_Power > 0.1, "Defrost",
-             # Aux_Power > 4.0 & HP_Power > 0.1 & HP_Power < 1.25 & Fan_Power > 0.35, "Defrost",
-                  ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
-                         ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
-                                ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                          "Heating-Off")))),
+           ifelse(  
+             # Trane RV data is missing during the following time periods, so use secondary indicators
+             (Timestamp >= strptime("2023-01-16", "%F", tz="US/Mountain") & Timestamp <= strptime("2023-01-30","%F",tz="US/Mountain") |
+                Timestamp >= strptime("2023-02-22", "%F", tz="US/Mountain") & Timestamp <= strptime("2023-03-04","%F",tz="US/Mountain")) &
+               # Secondary indicators for defrost mode
+               Aux_Power > 4.0 & HP_Power > 0.1 & HP_Power < 1.25 & Fan_Power > 0.35, "Defrost",
+             # For all other time periods, use RV indicator for defrost mode
+             ifelse(!is.na(DEFROST_ON_1) & DEFROST_ON_1==1 & HP_Power > 0.1, "Defrost",
+                    # For all time periods, use power to determine which heating mode
+                    ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
+                           ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
+                                  ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
+                                         "Heating-Off"))))),
     # Logic for non-4228VB sites
            ifelse(RV_Volts > 0.6 & RV_Volts < 3 & HP_Power > 0.1, "Defrost",
                   ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
@@ -503,8 +525,13 @@ df <- df %>% mutate(supply_flow_rate_CFM =
     # since the last power reading.
     # This assumes that if there is missing data, the eGauge will report the first
     # point after a gap as the average of the gap.
+## WE SHOULD CONFIRM IF THIS IS TRUE ^^^
     # Important that the data is sorted by site id and then timestamp, which it 
     # should be from previous code "arrange".
+
+## I think there is an easier way to handle energy by dividing the sum by the timeframe
+  # within the graph function instead of calculating here. This loop is time consuming,
+  # So best to avoid if possible. ##
 energyCalc <- function(site, timestamp, power){
   
   index <- which(!is.na(power))[1] + 1    # Second non-NA row
@@ -524,8 +551,7 @@ energyCalc <- function(site, timestamp, power){
   }
   energy    # Return energy vector as output
 }
-  # This energy calculation is very time consuming.
-df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$AHU_Power + df$HP_Power)
+# df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$AHU_Power + df$HP_Power)
 
 
 ## Heating and cooling related calculations:
@@ -736,16 +762,18 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
 
 ### NA Data Summary ----
 
-NA_summary_table <- df %>%
-  group_by(Site_ID, Date, Weekday) %>%
-  summarize(HP_Power_NA = round(sum(is.na(HP_Power))*100/ n(), 1),
-            Aux_Power_NA = round(sum(is.na(Aux_Power))*100/ n(),1),
-            Fan_Power_NA = round(sum(is.na(Fan_Power))*100/ n(),1),
-            Data_missing = round(100 - n()*100/ 86400, 1))
-write.csv(NA_summary_table, 
-          file=paste0(wd, "/Graphs/Missing_Power_Data_Summary.csv"),
-          row.names=F)
-
+for(id in unique(df$Site_ID)){
+  write.csv(
+    df %>%
+      filter(Site_ID==id) %>%
+      group_by(Site_ID, Date, Weekday) %>%
+      summarize(HP_Power_NA = round(sum(is.na(HP_Power))*100/ n(), 1),
+                Aux_Power_NA = round(sum(is.na(Aux_Power))*100/ n(),1),
+                Fan_Power_NA = round(sum(is.na(Fan_Power))*100/ n(),1),
+                Data_missing = round(100 - n()*100/ 86400, 1)), 
+            file=paste0(wd, "/Graphs/", id, "/Missing_Power_Data_Summary_", id, ".csv"),
+            row.names=F)
+}
 
 
 ### Time Series Daily Investigation Plots ----
@@ -761,16 +789,16 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
              Timestamp >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
-    geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) +
+    geom_line(aes(y=HP_Power, color = "Outdoor Unit Power"),size=0.3) + 
+    geom_line(aes(y=Fan_Power, color = "Supply Fan Power"),size=0.3) +
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     geom_point(aes(y=Defrost, color = "Defrost Mode On"),size=2) + 
     geom_point(aes(y=Defrost_Cycle_Runtimes/2, color = "Defrost Cycle Length"),size=3,shape=8) +
     scale_y_continuous(name = "Power (kW)",
                        limits = c(-0.5, 21),
                        sec.axis = sec_axis(~.*2, name ="Defrost Cycle Length (mins)")) +
-    scale_color_manual(name = "", breaks = c("Auxiliary Power","Heat Pump Power","Fan Power","Defrost Mode On","Defrost Cycle Length"),
-                       values = c("#E69F00", "black", "#56B4E9","#009E73", "#CC79A7", "gray", "#F0E442", "#0072B2", "#D55E00")) +
+    scale_color_manual(name = "", breaks = c("Auxiliary Power","Outdoor Unit Power","Supply Fan Power","Defrost Mode On","Defrost Cycle Length"),
+                       values = c("#E69F00","black","#CC79A7","#009E73","#56B4E9", "gray", "#F0E442", "#0072B2", "#D55E00")) +
     labs(title=paste0("Defrost runtime chart for site ", site),x="") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -783,7 +811,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   size=c(1,1,1,3,3),
                                                   linetype=c(1,1,1,NA,NA))))
 }
-# DefrostCycleTimeSeries("4228VB", "2023-02-16", "2023-02-17")
+# DefrostCycleTimeSeries("4228VB", "2023-01-17", "2023-01-18")
 
 
 # Power time series comparison chart with OAT and SAT
@@ -798,13 +826,14 @@ OperationTimeSeries <- function(site, timestart, timeend){
     ggplot(aes(x=as.POSIXct(Timestamp))) +
     geom_line(aes(y=OA_TempF/5, color = "Outdoor Air Temperature"),size=0.3) + 
     geom_line(aes(y=SA_TempF/5, color = "Supply Air Temperature"),size=0.3) +
-    geom_line(aes(y=HP_Power, color = "Heat Pump Power"),size=0.3) + 
-    geom_line(aes(y=Fan_Power, color = "Fan Power"),size=0.3) +
+    geom_line(aes(y=HP_Power, color = "Outdoor Unit Power"),size=0.3) + 
+    geom_line(aes(y=Fan_Power, color = "Supply Fan Power"),size=0.3) +
     geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
                        limits = c(-4, 25),
                        sec.axis = sec_axis(~.*5, name ="Temperature (F)")) +
-    scale_color_manual(name = "", values = c("#E69F00", "#56B4E9","#009E73", "gray", "black", "#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    scale_color_manual(name = "", breaks = c("Auxiliary Power","Outdoor Unit Power","Supply Fan Power","Outdoor Air Temperature","Supply Air Temperature"),
+                       values = c("#E69F00","gray","#009E73","black","#56B4E9","#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
     labs(title=paste0("System operation time series plot for site ", site),x="") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -815,7 +844,7 @@ OperationTimeSeries <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# OperationTimeSeries("5291QJ", "2023-01-21", "2023-01-24")
+# OperationTimeSeries("4228VB", "2023-01-21", "2023-01-22")
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
@@ -842,7 +871,7 @@ HeatOutputTimeSeries <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# HeatOutputTimeSeries("2563EH", "2023-02-06", "2023-02-08")
+# HeatOutputTimeSeries("4228VB", "2023-02-06", "2023-02-08")
 
 
 
