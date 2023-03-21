@@ -106,8 +106,8 @@ sites <- c(
            # "2896BR", 
            # "4228VB",
            # "5291QJ",
-           "6950NE",
-           # "8220XE", 
+           # "6950NE",
+           "8220XE",
            # "9944LD", 
            # "5539NO",
            "")
@@ -662,7 +662,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries("6950NE", "OA_RH", 1, "1/31/2023 0:00", "2/01/2023 0:00")
+# TimeSeries("8220XE", "Room1_TempF", 1, "12/20/2022 0:00", "12/30/2022 0:00")
 
 
 # Investigate NA values for any variable
