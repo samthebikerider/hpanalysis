@@ -102,7 +102,7 @@ read_plus_nrcan_min <- function(file) {fread(file) %>%
 
 # Select sites to read
 sites <- c(
-           "2563EH",
+           # "2563EH",
            # "2896BR",
            # "4228VB",
            # "5291QJ",
@@ -110,6 +110,8 @@ sites <- c(
            # "8220XE",
            # "9944LD",
            # "5539NO",
+           # "6112OH",
+           # "7083LM",
            "")
 timeframe <- c(strptime("1/10/2022", format="%m/%d/%Y", tz="UTC"), strptime("3/20/2023", format="%m/%d/%Y", tz="UTC"))
 
