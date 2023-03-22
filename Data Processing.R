@@ -102,13 +102,13 @@ read_plus_nrcan_min <- function(file) {fread(file) %>%
 
 # Select sites to read
 sites <- c(
-           # "2563EH", 
-           # "2896BR", 
+           "2563EH",
+           # "2896BR",
            # "4228VB",
            # "5291QJ",
            # "6950NE",
-           "8220XE",
-           # "9944LD", 
+           # "8220XE",
+           # "9944LD",
            # "5539NO",
            "")
 timeframe <- c(strptime("1/10/2022", format="%m/%d/%Y", tz="UTC"), strptime("3/20/2023", format="%m/%d/%Y", tz="UTC"))
@@ -273,22 +273,28 @@ df_e350 <- df_e350 %>%
   
 df_michaels <- df_michaels %>%
   # Site 8220XE:
-    # Data doesn't stabilize until Dec 12th at 12:00.
+    # Data doesn't stabilize until Dec 12th at 12:00, use Dec 13th as starting point.
   filter(Site_ID != "8220XE" | Timestamp >= strptime("2022-12-13", "%Y-%m-%d", tz="US/Central")) %>%
   # Site 6950NE:
-    # Data doesn't stabilize until December 10th
+    # Data doesn't stabilize until December 10th, use this day as starting point.
   filter(Site_ID != "6950NE" | Timestamp >= strptime("2022-12-10", "%Y-%m-%d", tz="US/Central")) %>%
     # Site 6950NE has one very high OAT, apply filter for all sites:
   mutate(OA_TempF=replace(OA_TempF, OA_TempF > 150, NA)) %>%
-    # Site 9944LD only has about five hours of data on 1/16/2023. Remove whole day?
-    # Sites 2563EH and 2896BR both have almost a full day of data their first day, maybe 1 hour short
+  # Site 2896BR:
+    # Data doesn't stabilize until Feb 1st, use this day as starting point.
+  # Site 2563EH:
+    # Data doesn't stabilize until Feb 1st, use this day as starting point.
+  # Site 7083LM:
+  # Site 61120H:
+  # Site 9944LD:
+    # Data doesn't stabilize until Jan 7th, use this day as starting point.
     # The indoor unit power data at site 9944LD is flipped negative between 1/7/23 and 1/12/23
-  mutate(Fan_Power = ifelse(Fan_Power < 0, - Fan_Power, Fan_Power),
-         AHU_Power = ifelse(AHU_Power < 0, - AHU_Power, AHU_Power),
-         Aux1_Power = ifelse(Aux1_Power < 0, - Aux1_Power, Aux1_Power),
-         Aux2_Power = ifelse(Aux2_Power < 0, - Aux2_Power, Aux2_Power),
-         Aux3_Power = ifelse(Aux3_Power < 0, - Aux3_Power, Aux3_Power),
-         Aux4_Power = ifelse(Aux4_Power < 0, - Aux4_Power, Aux4_Power))
+  mutate(Fan_Power = ifelse(Site_ID == "9944LD" & Fan_Power < 0, - Fan_Power, Fan_Power),
+         AHU_Power = ifelse(Site_ID == "9944LD" & AHU_Power < 0, - AHU_Power, AHU_Power),
+         Aux1_Power = ifelse(Site_ID == "9944LD" & Aux1_Power < 0, - Aux1_Power, Aux1_Power),
+         Aux2_Power = ifelse(Site_ID == "9944LD" & Aux2_Power < 0, - Aux2_Power, Aux2_Power),
+         Aux3_Power = ifelse(Site_ID == "9944LD" & Aux3_Power < 0, - Aux3_Power, Aux3_Power),
+         Aux4_Power = ifelse(Site_ID == "9944LD" & Aux4_Power < 0, - Aux4_Power, Aux4_Power))
 
 # df_nrcan <- df_nrcan %>%
   # Site 5291QJ:
@@ -818,7 +824,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   size=c(1,1,1,3,3),
                                                   linetype=c(1,1,1,NA,NA))))
 }
-# DefrostCycleTimeSeries("6950NE", "2023-01-25", "2023-01-26")
+# DefrostCycleTimeSeries("2896BR", "2023-02-05", "2023-02-06")
 
 
 # Power time series comparison chart with OAT and SAT
