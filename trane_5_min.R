@@ -54,8 +54,11 @@ site_4228VB <- bind_rows(`4228VB_2022.12.19_Week51_minute.csv`, `4228VB_2022.12.
                          `4228VB_2023.01.02_Week01_minute.csv`, `4228VB_2023.01.09_Week02_minute.csv`,
                          `4228VB_2023.01.16_Week03_minute.csv`, `4228VB_2023.01.23_Week04_minute.csv`,
                          `4228VB_2023.01.30_Week05_minute.csv`, `4228VB_2023.02.06_Week06_minute.csv`,
-                         `4228VB_2023.02.13_Week07_minute.csv`)
-#site 2 - 
+                         `4228VB_2023.02.13_Week07_minute.csv`, `4228VB_2023.02.20_Week08_minute.csv`,
+                         `4228VB_2023.02.27_Week09_minute.csv`, `4228VB_2023.03.06_Week10_minute.csv`)
+#site 2 - 5539NO
+site_5539NO <- bind_rows(`5539NO_2023.02.13_Week07_minute.csv`, `5539NO_2023.02.20_Week08_minute.csv`,
+                         `5539NO_2023.02.27_Week09_minute.csv`, `5539NO_2023.03.06_Week10_minute.csv`) 
 
 
 # function to aggregate dfs
@@ -67,7 +70,7 @@ agg_dfs <- function(df, site, tz){
   df$datetime_UTC <- floor_date(df$`Timestamp (UTC)`, "5 mins")
   df_agg <- df %>%
     group_by(datetime_UTC) %>%
-    summarise("HP_pwr_kW" = ifelse("HP_Power [kW]" %in% column_names == TRUE, mean(`HP_Power [kW]`, na.rm = T), NA),
+    summarise("ODU_pwr_kW" = ifelse("HP_Power [kW]" %in% column_names == TRUE, mean(`HP_Power [kW]`, na.rm = T), NA),
               "fan_pwr_kW" = ifelse("Fan_Power [kW]" %in% column_names == TRUE, mean(`Fan_Power [kW]`, na.rm = T), NA),
               "AHU_pwr_kW" = ifelse("AHU_Power [kW]" %in% column_names == TRUE, mean(`AHU_Power [kW]`, na.rm = T), NA),
               "auxheat_pwr_kW" = ifelse("AuxHeat_Power [kW]" %in% column_names == TRUE, mean(`AuxHeat_Power [kW]`, na.rm = T), NA),
@@ -98,6 +101,7 @@ agg_dfs <- function(df, site, tz){
               "reversing_valve_signal_V" = ifelse("reversing_valve_signal_V" %in% column_names == TRUE, mean(`reversing_valve_signal_V`, na.rm = T), NA),
               "seconds_non_zero_in_5min_period" = sum(`seconds`))
   df_agg <- as.data.frame(df_agg)
+  #df_agg$HP_system_pwr_kW <- sum(df_agg$ODU_pwr_kW, df_agg$fan_pwr_kW, df_agg$AHU_pwr_kW, df_agg$auxheat_pwr_kW, na.rm = T)
   df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
   df_agg$local_datetime <- format(df_agg$datetime_UTC, tz = tz, usetz = T)
   df_agg <- df_agg %>% relocate(datetime_UTC)
