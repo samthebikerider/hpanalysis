@@ -105,7 +105,7 @@ sites <- c(
            # "2563EH",
            # "2896BR",
            # "4228VB",
-           # "5291QJ",
+           "5291QJ",
            # "6950NE",
            # "8220XE",
            # "9944LD",
@@ -113,7 +113,7 @@ sites <- c(
            # "6112OH",
            # "7083LM",
            "")
-timeframe <- c(strptime("1/10/2022", format="%m/%d/%Y", tz="UTC"), strptime("3/20/2023", format="%m/%d/%Y", tz="UTC"))
+timeframe <- c(strptime("2/12/2022", format="%m/%d/%Y", tz="UTC"), strptime("4/20/2023", format="%m/%d/%Y", tz="UTC"))
 
 # Read Michaels/E350/NRCan data separately
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
@@ -226,6 +226,7 @@ rm(df_e350_min, df_e350_sec)
   #df_e350$DEFROST_ON_1 <- trane_defrost_interp(df_e350$Timestamp, df_e350$DEFROST_ON_1, df_e350$Site_ID)
 # Ideally, we would do 4-5 second breaks, but with data sometimes reporting less frequently,
   # 20 second breaks are safer for not missing any defrost points.
+# For site 4228VB only:
 df_e350 <- df_e350 %>% group_by(Site_ID, Break=cut(Timestamp, breaks="20 secs")) %>%
   mutate(DEFROST_ON_1=ceiling(mean(DEFROST_ON_1, na.rm=T))) %>% ungroup() %>%
   select(-Break)
@@ -538,7 +539,7 @@ df <- df %>% mutate(supply_flow_rate_CFM =
     # since the last power reading.
     # This assumes that if there is missing data, the eGauge will report the first
     # point after a gap as the average of the gap.
-## WE SHOULD CONFIRM IF THIS IS TRUE ^^^
+## WE SHOULD CONFIRM IF THIS IS TRUE ^^^ It will affect calculations.
     # Important that the data is sorted by site id and then timestamp, which it 
     # should be from previous code "arrange".
 
@@ -597,10 +598,10 @@ df <- df %>% mutate(
       (SA_TempF - RA_TempF)) -                                # Temperature delta
     Aux_Power * 3412,                                         # Subtract auxiliary power, convert kW to btu/hr
 
-  # Auxiliary Heat Output
+  # Total Heat Output
     # Electric resistance heating is expected to have one unit of power in to one unit of heat output
-  Aux_Heat_Output_Btu_h = ifelse(
-    Operating_Mode == "Cooling", NA, Aux_Power * 3412),
+  Total_Heat_Output_Btu_h = ifelse(
+    Operating_Mode == "Cooling", NA, HP_Heat_Output_Btu_h + Aux_Power * 3412),
 
   # Cooling output
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
@@ -612,28 +613,22 @@ df <- df %>% mutate(
   #     (SA_TempF - RA_TempF) /
   #     (1 + Supply_Humidity_Ratio)),
   
+  
+### We are not calling this heating load anymore, rather "Power"... it is just power
+  # But different units. I think we can convert the units within any graph we are making. ###
   # Heating load
   Heating_Load_Btu_h = ifelse(
     Operating_Mode == "Cooling", NA,
     (AHU_Power + HP_Power) * 3412),                           # Convert total system power from kW to Btu/hr
 
-  # Cooling load
-  # Cooling_Load_Btu_h = ifelse(
-  #   Operating_Mode == "Heating"|Operating_Mode=="Defrost", NA,
-  #   (AHU_Power + HP_Power) * 3412),                           # Convert total system power from kW to Btu/hr
 
-
-  # COP heating
-    # VM: wondering if we should report COP with and without supplemental heat.
-    # I personally think that supplemental heat should not be part of the COP
-    # but we need to align this with the challenge spec.
-    # KK: Right now heating capacity subtracts auxiliary heat component.
+  # COP HP heating
   HP_COP_Heating = HP_Heat_Output_Btu_h / 
     Heating_Load_Btu_h,
 
-# COP cooling
-  # HP_COP_Cooling = (-1 * HP_Cool_Output_Btu_h) / 
-  #   Cooling_Load_Btu_h
+  # COP total heating
+  Total_COP_Heating = Total_Heat_Output_Btu_h / 
+    Heating_Load_Btu_h,
 )
 
 
@@ -657,6 +652,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
                 Interval = minute(Timestamp) %/% interval) %>% 
     filter(Site_ID == site &
+             
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     group_by(Site_ID, Date, Hour, Interval) %>% 
@@ -670,7 +666,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries("8220XE", "Room1_TempF", 1, "12/20/2022 0:00", "12/30/2022 0:00")
+# TimeSeries("5539NO", "Room1_TempF", 1, "3/14/2023 0:00", "3/17/2023 0:00")
 
 
 # Investigate NA values for any variable
