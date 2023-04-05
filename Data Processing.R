@@ -74,11 +74,13 @@ read_plus_nrcan_sec <- function(file) {fread(file) %>%
     mutate(Site_ID = substr(file, 108, 113),
            # Convert to POSIXct and force TZ to US/Eastern (local), then change to UTC
            Timestamp = with_tz(as.POSIXct(strptime(Timestamp, tz="Canada/Eastern","%m/%d/%Y %H:%M:%S")),"UTC"),
-           RV_Volts=`Leg 1 Voltage` + `Leg 2 Voltage`,
-           HP_Power=`CCHP Outdoor Unit Leg 1 Instantaneous Power` + `CCHP Outdoor Unit Leg 2 Instantaneous Power`,
-           Fan_Power=`CCHP Blower Leg 1 Instantaneous Power` + `CCHP Blower Leg 2 Instantaneous Power`,
-           Aux_Power=`CCHP Heat Bank Leg 1 Instantaneous Power` + `CCHP Heat Bank Leg 2 Instantaneous Power`) %>%
-    # select(Site_ID, Timestamp,RV_Volts,HP_Power,Fan_Power,Aux_Power) %>%
+           RV_Volts=NA,
+           HP_Power=`CCHP Outdoor Unit Leg 1 Instantaneous Power`+`CCHP Outdoor Unit Leg 2 Instantaneous Power`,
+           Fan_Power=`CCHP Blower Leg 1 Instantaneous Power`+`CCHP Blower Leg 2 Instantaneous Power`,
+           Aux1_Power=`CCHP Heat Bank Stage 1 Leg 1 Inst Power`*2,
+           Aux2_Power=`CCHP Heat Bank Stage 2 Leg 1 Inst Power`*2,
+           Aux3_Power=`CCHP Heat Bank Stage 3 Leg 1 Inst Power`*2) %>%
+    select(Site_ID, Timestamp,RV_Volts,HP_Power,Fan_Power,Aux1_Power,Aux2_Power,Aux3_Power) %>%
     filter(Site_ID %in% sites & 
              Timestamp >= timeframe[1] &
              Timestamp <= timeframe[2])}
@@ -86,17 +88,17 @@ read_plus_nrcan_min <- function(file) {fread(file) %>%
     # Modify filename so that it is the Site ID
     mutate(Site_ID = substr(file, 108, 113),
            # Convert to POSIXct and force TZ to US/Eastern (local), then change to UTC
-           Timestamp = with_tz(as.POSIXct(strptime(Timestamp, tz="Canada/Eastern","%m/%d/%Y %H:%M:%S")),"UTC")) %>%
-    select(Site_ID, Timestamp,
-           SA1_TempC=`Supply T (oC)`,
+           Timestamp = with_tz(as.POSIXct(strptime(Timestamp, tz="Canada/Eastern","%m/%d/%Y %H:%M")),"UTC"),
+           SA1_TempF=9/5*`Supply T (oC)`+32,
            SA1_RH=`Supply RH (%RH)`,
-           RA_TempC=`Return T (oC)`,
+           RA_TempF=9/5*`Return T (oC)`+32,
            RA_RH=`Return RH (%RH)`,
-           AHU_TempC=`Ambient T (oC)`,
-           AHU_RH=`Ambient RH (%RH)`,
-           Room1_TempC=`Main Floor T-stat T (oC)`,
+           OA_TempF=9/5*`Ambient T (oC)`+32,
+           OA_RH=`Ambient RH (%RH)`,
+           Room1_TempF=9/5*`Main Floor T-stat T (oC)`+32,
            Room1_RH=`Main Floor T-stat RH (%RH)`) %>%
-    filter(Site_ID %in% sites & 
+    select(Site_ID,Timestamp,SA1_TempF,SA1_RH,RA_TempF,RA_RH,OA_TempF,OA_RH,Room1_TempF,Room1_RH) %>%
+    filter(!is.na(Timestamp) & Site_ID %in% sites &
              Timestamp >= timeframe[1] &
              Timestamp <= timeframe[2])}
 
@@ -104,16 +106,17 @@ read_plus_nrcan_min <- function(file) {fread(file) %>%
 sites <- c(
            # "2563EH",
            # "2896BR",
-           # "4228VB",
-           "5291QJ",
-           # "6950NE",
-           # "8220XE",
-           # "9944LD",
+           "4228VB",
+           # "5291QJ",
+           # "2458CE",
+           "6950NE",
+           "8220XE",
+           "9944LD",
            # "5539NO",
            # "6112OH",
            # "7083LM",
            "")
-timeframe <- c(strptime("2/12/2022", format="%m/%d/%Y", tz="UTC"), strptime("4/20/2023", format="%m/%d/%Y", tz="UTC"))
+timeframe <- c(strptime("1/30/2023", format="%m/%d/%Y", tz="UTC"), strptime("2/15/2023", format="%m/%d/%Y", tz="UTC"))
 
 # Read Michaels/E350/NRCan data separately
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
@@ -226,6 +229,7 @@ rm(df_e350_min, df_e350_sec)
   #df_e350$DEFROST_ON_1 <- trane_defrost_interp(df_e350$Timestamp, df_e350$DEFROST_ON_1, df_e350$Site_ID)
 # Ideally, we would do 4-5 second breaks, but with data sometimes reporting less frequently,
   # 20 second breaks are safer for not missing any defrost points.
+
 # For site 4228VB only:
 df_e350 <- df_e350 %>% group_by(Site_ID, Break=cut(Timestamp, breaks="20 secs")) %>%
   mutate(DEFROST_ON_1=ceiling(mean(DEFROST_ON_1, na.rm=T))) %>% ungroup() %>%
@@ -245,16 +249,13 @@ df_nrcan <- merge(
   # Second-level data
   df_nrcan_sec,
   # Minute-level data
-  df_nrcan_min %>% 
-    mutate(RA_TempF = 9/5*RA_TempC+32, SA1_TempF = 9/5*SA1_TempC+32, 
-           Room1_TempF = 9/5*Room1_TempC+32, AHU_TempF = 9/5*AHU_TempC+32) %>%
-    select(-RA_TempC, -SA1_TempC, -Room1_TempC, -AHU_TempC),
+  df_nrcan_min,
   by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>% 
   arrange(Site_ID, Timestamp) %>%
   mutate(Room2_TempF = NA, Room2_RH = NA, Room3_TempF = NA, Room3_RH = NA, 
          Room4_TempF = NA, Room4_RH = NA, SA2_RH = NA, SA2_TempF = NA, 
          SA3_TempF = NA, SA3_RH = NA, SA4_TempF = NA, SA4_RH = NA, AHU_Power = NA,
-         OA_TempF = NA, OA_RH = NA)
+         AHU_TempF = NA, AHU_RH = NA)
 
 rm(df_nrcan_min, df_nrcan_sec)
 
@@ -301,6 +302,7 @@ df_michaels <- df_michaels %>%
 
 # df_nrcan <- df_nrcan %>%
   # Site 5291QJ:
+  # Site 2458CE:
 
 
 
@@ -338,12 +340,13 @@ df_e350 <- df_e350 %>%
   select(-Break)
 
   # NRCan
-# Note: Only two SA monnits at the first site, but future sites may have four.
 df_nrcan <- df_nrcan %>% 
   group_by(Site_ID, Break=cut(Timestamp, breaks="1 min")) %>%
   mutate(SA1_TempF=mean(SA1_TempF, na.rm=T),
          SA1_RH=mean(SA1_RH, na.rm=T),
-         RA_TempF=mean(RA_TempF, na.rm=T)) %>% 
+         RA_TempF=mean(RA_TempF, na.rm=T),
+         OA_TempF=mean(OA_TempF, na.rm=T),
+         OA_RH=mean(OA_RH, na.rm=T)) %>% 
   ungroup() %>%
   select(-Break)
 
@@ -411,7 +414,21 @@ df_e350 <- df_e350 %>% mutate(
 
 
 df_nrcan <- df_nrcan %>% mutate(
-  Operating_Mode = "Heating-HP Only"
+  Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power), na.rm=T),
+  Operating_Mode = ifelse(
+    #Site 2458CE
+    Site_ID=="2458CE",
+    ifelse(HP_Power > 0.1 & Fan_Power > 0.4 & Aux_Power > 4, "Defrost",
+           ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
+                  ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
+                         ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
+                                ifelse(HP_Power < 0.1 & Aux_Power < 0.1, "Heating-Off", NA))))),
+    # Site 5291QJ
+    ifelse(HP_Power > 0.5 & HP_Power < 2.2 & Fan_Power > 0.02 & Fan_Power < 0.06 , "Defrost",
+           ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
+                  ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
+                         ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
+                                ifelse(HP_Power < 0.1 & Aux_Power < 0.1, "Heating-Off", NA))))))
 )
 
 
@@ -423,7 +440,12 @@ df <- rbind(
            RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
            Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode,
            Room4_TempF, Room4_RH),
-  # df_nrcan,
+  df_nrcan %>%
+    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
+           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF,
+           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
+           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode,
+           Room4_TempF, Room4_RH),
   df_michaels %>% 
     select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
            OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
@@ -531,46 +553,11 @@ df <- df %>% mutate(supply_flow_rate_CFM =
     ifelse(Site_ID=="2896BR", 108.64 * (Fan_Power*1000)^0.4405,
     ifelse(Site_ID=="6112OH", 98.457 * (Fan_Power*1000)^0.4346,
     ifelse(Site_ID=="7083LM", 120.66 * (Fan_Power*1000)^0.3657,
-      NA)))))))))
+      NA)))))))),
  
 
-  # Energy use
-    # Calculate energy use at each timestamp as the power multiplied by the interval
-    # since the last power reading.
-    # This assumes that if there is missing data, the eGauge will report the first
-    # point after a gap as the average of the gap.
-## WE SHOULD CONFIRM IF THIS IS TRUE ^^^ It will affect calculations.
-    # Important that the data is sorted by site id and then timestamp, which it 
-    # should be from previous code "arrange".
-
-## I think there is an easier way to handle energy by dividing the sum by the timeframe
-  # within the graph function instead of calculating here. This loop is time consuming,
-  # So best to avoid if possible. ##
-energyCalc <- function(site, timestamp, power){
-  
-  index <- which(!is.na(power))[1] + 1    # Second non-NA row
-  ts <- timestamp[index]                  # Timestamp at first non-NA row
-  energy <- rep(NA, length(site))         # Initialize vector for energy
-  ct <- site[index]                       # Initialize counter to detect new sites
-  
-  for(row in index:length(site)){
-    
-    if(!is.na(power[row])){              # If the power is not NA, calculate energy from last time step
-      if(site[row] == ct){               # Only calculate energy if there is not a new site
-        energy[row] = power[row] * difftime(timestamp[row], ts, units="hours")
-      }
-      ts <- timestamp[row]
-      ct <- site[row]                    # Record of last site with non-NA
-    }
-  }
-  energy    # Return energy vector as output
-}
-# df$Energy_kWh <- energyCalc(df$Site_ID, df$Timestamp, df$AHU_Power + df$HP_Power)
-
-
 ## Heating and cooling related calculations:
-df <- df %>% mutate(
-  
+
   # Partial Water Pressure (Pw) = RH * Pws; 
   # Pws = f(T); T in Fahrenheit, based on curve fit
   # 6th order poly fit: Pws = -0.000000001546*T^6 + 0.000000516256*T^5 - 0.000020306966*T^4 + 0.002266035021*T^3 + 0.190010315225*T^2 + 6.715900713408*T + 125.349159019000
@@ -666,7 +653,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries("5539NO", "Room1_TempF", 1, "3/14/2023 0:00", "3/17/2023 0:00")
+# TimeSeries("4228VB", "Room1_TempF", 1,  "2/06/2023 0:00", "2/07/2023 0:00")
 
 
 # Investigate NA values for any variable
@@ -822,7 +809,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   size=c(1,1,1,3,3),
                                                   linetype=c(1,1,1,NA,NA))))
 }
-# DefrostCycleTimeSeries("2896BR", "2023-02-05", "2023-02-06")
+# DefrostCycleTimeSeries("5291QJ", "2023-01-10", "2023-01-11")
 
 
 # Power time series comparison chart with OAT and SAT
@@ -855,7 +842,7 @@ OperationTimeSeries <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# OperationTimeSeries("6950NE", "2023-01-25", "2023-01-26")
+# OperationTimeSeries("5291QJ", "2023-01-12", "2023-01-13")
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
@@ -885,7 +872,57 @@ HeatOutputTimeSeries <- function(site, timestart, timeend){
 # HeatOutputTimeSeries("4228VB", "2023-02-06", "2023-02-08")
 
 
-
+# Demand Reponse Time Series Investigation
+DemandResponseTimeSeries <- function(site, timestart, timeend){
+  # Create a dataframe manually with DR event periods
+  DemRes <- data.frame(
+    Site_ID = c(rep("4228VB",4), rep("6950NE",4), rep("8220XE",4), rep("9944LD",4)),
+    Event_Type = rep(c("GCCW","GCMW","CCMW","CCCW"), 4),
+    Start = c(strptime("2023-02-02 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-06 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-07 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Mountain"),
+              strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-06 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Central"),
+              strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-10 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Central"),
+              strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-02 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-10 09:00:00", format="%F %T", tz="US/Mountain")),
+    End = c(strptime("2023-02-02 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-06 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-07 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Mountain"),
+            strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-06 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Central"),
+            strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-10 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Central"),
+            strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-02 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-10 13:00:00", format="%F %T", tz="US/Mountain"))
+  ) %>%
+    mutate(Start = Start %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
+           End = End %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID == site &
+             Start >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
+             Start <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]))
+    
+    
+  Data <- df %>% 
+    mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
+             Timestamp <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]))
+  
+  ggplot() +
+    geom_rect(data=DemRes, aes(xmin=as.POSIXct(Start), xmax=as.POSIXct(End), ymin=-Inf, ymax=Inf, fill=Event_Type), alpha=0.2) +
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=OA_TempF/5, color = "Outdoor Air Temperature"),size=0.3) + 
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Room1_TempF/5, color = "Room Temperature"),size=0.3) +
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=HP_Power, color = "Outdoor Unit Power"),size=0.3) + 
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
+    scale_y_continuous(name = "Power (kW)",
+                       limits = c(-4, 25),
+                       sec.axis = sec_axis(~.*5, name ="Temperature (F)")) +
+    scale_color_manual(name = "", breaks = c("Auxiliary Power","Outdoor Unit Power","Outdoor Air Temperature","Room Temperature"),
+                       values = c("#E69F00","gray","#009E73","black","#56B4E9","#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    labs(title=paste0("Demand response event plot for site ", site),x="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.5),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
+    guides(color=guide_legend(override.aes=list(size=3)),
+           fill=guide_legend(title="Event Type"))
+}
+DemandResponseTimeSeries("4228VB", "2023-02-06", "2023-02-08")
 
 
 ### Time Series Long Term Graphs ----
