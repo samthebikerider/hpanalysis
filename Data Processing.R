@@ -483,7 +483,8 @@ for(id in unique(df$Site_ID)){
   # Supply temperature and humidity calculated as the average of the four quadrants
 df <- df %>% mutate(
   SA_RH = rowMeans(cbind(SA1_RH, SA2_RH, SA3_RH, SA4_RH), na.rm=T),
-  SA_TempF = rowMeans(cbind(SA1_TempF, SA2_TempF, SA3_TempF, SA4_TempF), na.rm=T))
+  SA_TempF = rowMeans(cbind(SA1_TempF, SA2_TempF, SA3_TempF, SA4_TempF), na.rm=T),
+  Room_TempF = rowMeans(cbind(Room1_TempF, Room2_TempF, Room3_TempF, Room4_TempF), na.rm=T))
 
   # Add column that determines the number of aux legs (when not in defrost mode)
 df <- df %>% mutate(
@@ -656,7 +657,7 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries("4228VB", "Room1_TempF", 1,  "2/06/2023 0:00", "2/07/2023 0:00")
+# TimeSeries("4228VB", "Fan_Power", 1,  "2/12/2023 0:00", "2/14/2023 0:00")
 
 
 # Investigate NA values for any variable
@@ -677,7 +678,7 @@ NATimeSeries <- function(site, parameter, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-NATimeSeries("4228VB", "SA_RH", "12/23/2022 00:00", "12/24/2022 00:00")
+# NATimeSeries("6950NE", "HP_Power", "2/12/2023 0:00", "2/14/2023 0:00")
 
 
 # Temperature time series comparison chart
@@ -1203,7 +1204,7 @@ DemandResponseTimeSeries <- function(site, timestart, timeend){
   
   ggplot() +
     geom_rect(data=DemRes, aes(xmin=as.POSIXct(Start), xmax=as.POSIXct(End), ymin=-Inf, ymax=Inf, fill=Event_Type), alpha=0.2) +
-    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Room1_TempF/5, color = "Room Temperature"),size=0.3) +
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Room_TempF/5, color = "Room Temperature"),size=0.3) +
     geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=OA_TempF/5, color = "Outdoor Air Temperature"),size=0.3) + 
     geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=HP_Power, color = "Outdoor Unit Power"),size=0.3) + 
     geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
@@ -1293,29 +1294,29 @@ rm(id)
 DemandResponseComparison <- function(site, date1, date2, event){
   df1 <- df %>% 
     mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
-    filter(Site_ID == site & 
+    filter(!is.na(HP_Power) & Site_ID == site & 
              Timestamp >= strptime(date1, format="%F %T", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(date1, format="%F %T", tz=metadata$Timezone[metadata$Site_ID==site]) + hours(4)) %>%
-    mutate(Energy = cumsum(HP_Power + Aux_Power + Fan_Power) / 3600)
-  
+    mutate(Energy = cumsum(HP_Power + Aux_Power + Fan_Power) / 3600) 
+
   df2 <- df %>% 
     mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
-    filter(Site_ID == site & 
+    filter(!is.na(HP_Power) & Site_ID == site & 
              Timestamp >= strptime(date2, format="%F %T", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(date2, format="%F %T", tz=metadata$Timezone[metadata$Site_ID==site]) + hours(4)) %>%
     mutate(Energy = cumsum(HP_Power + Aux_Power + Fan_Power) / 3600,
            Timestamp_New = df1$Timestamp)
-  
+
     ggplot() +
       geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=Energy, color = event, linetype="Energy"),size=1) + 
       geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=Energy, color = "Comparison Day", linetype="Energy"),size=1) + 
-      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=Room1_TempF/20, color = event, linetype="Room Temperature"),size=1) + 
-      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=Room1_TempF/20, color = "Comparison Day", linetype="Room Temperature"),size=1) + 
+      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=Room_TempF/20, color = event, linetype="Room Temperature"),size=1) + 
+      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=Room_TempF/20, color = "Comparison Day", linetype="Room Temperature"),size=1) + 
       geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=OA_TempF/20, color = event, linetype="OA Temperature"),size=1) + 
       geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=OA_TempF/20, color = "Comparison Day", linetype="OA Temperature"),size=1) + 
       scale_linetype_manual(name="", values=c("solid","dashed","dotted")) +
       scale_y_continuous(name = "Cumulative Energy (kWh)",
-                       sec.axis = sec_axis(~.*20, name ="Temperature (F)")) +
+                       sec.axis = sec_axis(~.*2, name ="Temperature (F)")) +
       labs(title=paste0("Demand response event comparison plot for site ", site),x="", color="") +
       theme_bw() +
       theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -1326,6 +1327,26 @@ DemandResponseComparison <- function(site, date1, date2, event){
             axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
       guides(color=guide_legend(override.aes=list(size=3)))
 }
-DemandResponseComparison("4228VB", "2023-02-07 09:00:00", "2023-02-08 09:00:00", "CCW Event")
+DemandResponseComparison("4228VB", "2023-02-02 09:00:00", "2023-02-03 09:00:00", "GCCW Event")
+DemandResponseComparison("4228VB", "2023-02-06 13:00:00", "2023-02-05 13:00:00", "GCMW Event")
+DemandResponseComparison("4228VB", "2023-02-07 13:00:00", "2023-02-08 13:00:00", "CCMW Event")
+DemandResponseComparison("4228VB", "2023-02-09 09:00:00", "2023-02-08 09:00:00", "CCCW Event")
+DemandResponseComparison("6950NE", "2023-02-03 09:00:00", "2023-01-31 09:00:00", "GCCW Event")
+DemandResponseComparison("6950NE", "2023-02-06 13:00:00", "2023-02-05 13:00:00", "GCMW Event")
+# DemandResponseComparison("6950NE", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "CCCW Event")
+  # Feb 12-14 at 6950NE has a lot of duplicated rows and it's causing the graph function to fault.
+  # I tried using "unique()" and also removing the NA HP Power data, but still couldn't get it to work.
+DemandResponseComparison("6950NE", "2023-02-09 09:00:00", "2023-02-07 09:00:00", "CCMW Event")
+DemandResponseComparison("8220XE", "2023-02-03 09:00:00", "2023-01-31 09:00:00", "GCCW Event")
+DemandResponseComparison("8220XE", "2023-02-10 09:00:00", "2023-02-05 09:00:00", "GCMW Event")
+# DemandResponseComparison("8220XE", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "CCMW Event")
+  # Feb 12-14 at 8220XE also has a lot of duplicated rows and it's causing the graph function to fault.
+DemandResponseComparison("8220XE", "2023-02-09 09:00:00", "2023-02-05 09:00:00", "CCCW Event")
+# DemandResponseComparison("9944LD", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "GCCW Event")
+  # Feb 12-14 at 9944LD also has a lot of duplicated rows and it's causing the graph function to fault.
+DemandResponseComparison("9944LD", "2023-02-02 09:00:00", "2023-02-01 09:00:00", "GCMW Event")
+  # Jan 31-Feb 02 use a lot of energy so need to adjust scale in graph manually from 20 to 2.
+DemandResponseComparison("9944LD", "2023-02-03 09:00:00", "2023-02-05 09:00:00", "CCMW Event")
+DemandResponseComparison("9944LD", "2023-02-10 13:00:00", "2023-02-08 13:00:00", "CCCW Event")
 
 
