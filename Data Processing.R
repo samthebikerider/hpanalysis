@@ -335,7 +335,10 @@ df_e350 <- df_e350 %>%
          OA_TempF=mean(OA_TempF, na.rm=T),
          RA_TempF=mean(RA_TempF, na.rm=T),
          SA1_RH=mean(SA1_RH, na.rm=T),
-         SA2_RH=mean(SA2_RH, na.rm=T)) %>% 
+         SA2_RH=mean(SA2_RH, na.rm=T),
+         Room1_TempF=mean(Room1_TempF, na.rm=T),
+         Room2_TempF=mean(Room2_TempF, na.rm=T),
+         Room3_TempF=mean(Room3_TempF, na.rm=T)) %>% 
   ungroup() %>%
   select(-Break)
 
@@ -810,6 +813,18 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   linetype=c(1,1,1,NA,NA))))
 }
 # DefrostCycleTimeSeries("5291QJ", "2023-01-10", "2023-01-11")
+# Loop to print daily defrost time series graphs, one for each day for each site
+for(id in unique(df$Site_ID)){
+  for(d in unique(df$Date[df$Site_ID==id])){
+    d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
+    ggsave(paste0(id, '_Daily-Defrost-Cycles_',d,'.png'),
+           plot = DefrostCycleTimeSeries(id, d, d1),
+           path = paste0(wd,'/Graphs/',id, '/Daily Defrost Cycles/'),
+           width=12, height=4, units='in')
+  }
+}
+rm(d1,d,id)
+
 
 
 # Power time series comparison chart with OAT and SAT
@@ -843,6 +858,17 @@ OperationTimeSeries <- function(site, timestart, timeend){
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 # OperationTimeSeries("5291QJ", "2023-01-12", "2023-01-13")
+# Loop to print daily operation time series graphs, one for each day for each site
+for(id in unique(df$Site_ID)){
+  for(d in unique(df$Date[df$Site_ID==id])){
+    d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
+    ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
+           plot = OperationTimeSeries(id, d, d1),
+           path = paste0(wd,'/Graphs/',id, '/Daily Operation/'),
+           width=12, height=4, units='in')
+  }
+}
+rm(d1,d,id)
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
@@ -872,61 +898,9 @@ HeatOutputTimeSeries <- function(site, timestart, timeend){
 # HeatOutputTimeSeries("4228VB", "2023-02-06", "2023-02-08")
 
 
-# Demand Reponse Time Series Investigation
-DemandResponseTimeSeries <- function(site, timestart, timeend){
-  # Create a dataframe manually with DR event periods
-  DemRes <- data.frame(
-    Site_ID = c(rep("4228VB",4), rep("6950NE",4), rep("8220XE",4), rep("9944LD",4)),
-    Event_Type = rep(c("GCCW","GCMW","CCMW","CCCW"), 4),
-    Start = c(strptime("2023-02-02 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-06 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-07 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Mountain"),
-              strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-06 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Central"),
-              strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-10 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Central"),
-              strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-02 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-10 09:00:00", format="%F %T", tz="US/Mountain")),
-    End = c(strptime("2023-02-02 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-06 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-07 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Mountain"),
-            strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-06 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Central"),
-            strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-10 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Central"),
-            strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-02 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-10 13:00:00", format="%F %T", tz="US/Mountain"))
-  ) %>%
-    mutate(Start = Start %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
-           End = End %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
-    filter(Site_ID == site &
-             Start >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
-             Start <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]))
-    
-    
-  Data <- df %>% 
-    mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
-    filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
-             Timestamp <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]))
-  
-  ggplot() +
-    geom_rect(data=DemRes, aes(xmin=as.POSIXct(Start), xmax=as.POSIXct(End), ymin=-Inf, ymax=Inf, fill=Event_Type), alpha=0.2) +
-    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=OA_TempF/5, color = "Outdoor Air Temperature"),size=0.3) + 
-    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Room1_TempF/5, color = "Room Temperature"),size=0.3) +
-    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=HP_Power, color = "Outdoor Unit Power"),size=0.3) + 
-    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
-    scale_y_continuous(name = "Power (kW)",
-                       limits = c(-4, 25),
-                       sec.axis = sec_axis(~.*5, name ="Temperature (F)")) +
-    scale_color_manual(name = "", breaks = c("Auxiliary Power","Outdoor Unit Power","Outdoor Air Temperature","Room Temperature"),
-                       values = c("#E69F00","gray","#009E73","black","#56B4E9","#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
-    labs(title=paste0("Demand response event plot for site ", site),x="") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.5),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
-    guides(color=guide_legend(override.aes=list(size=3)),
-           fill=guide_legend(title="Event Type"))
-}
-DemandResponseTimeSeries("4228VB", "2023-02-06", "2023-02-08")
 
 
 ### Time Series Long Term Graphs ----
-
 
 # Number of defrost run cycles and average length of cycle per day
 RunTimesTimeSeries <- function(site, timestart, timeend){
@@ -1198,62 +1172,160 @@ SupplyReturnTemp <- function(site, timestart, timeend){
 
 
 
+### Demand Response Graphs ----
+DemandResponseEvents <- data.frame(
+  Site_ID = c(rep("4228VB",4), rep("6950NE",4), rep("8220XE",4), rep("9944LD",4)),
+  Event_Type = rep(c("GCCW","GCMW","CCMW","CCCW"), 4),
+  Start = c(strptime("2023-02-02 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-06 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-07 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Mountain"),
+            strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-06 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Central"),
+            strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-10 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 09:00:00", format="%F %T", tz="US/Central"),
+            strptime("2023-02-13 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-02 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-03 09:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-10 13:00:00", format="%F %T", tz="US/Mountain")),
+  End = c(strptime("2023-02-02 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-06 17:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-07 17:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Mountain"),
+          strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-06 17:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Central"),
+          strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-10 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Central"),strptime("2023-02-09 13:00:00", format="%F %T", tz="US/Central"),
+          strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-02 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-10 17:00:00", format="%F %T", tz="US/Mountain"))
+)
 
 
-### Print Graphs to Folder ----
+# Demand Reponse Time Series Investigation
+DemandResponseTimeSeries <- function(site, timestart, timeend){
 
-# Loop to print daily operation time series graphs, one for each day for each site
+  DemRes <-  DemandResponseEvents %>%
+    mutate(Start = Start %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
+           End = End %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID == site)
+  
+  Data <- df %>% 
+    mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]) &
+             Timestamp <= strptime(timeend,"%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==site]))
+  
+  ggplot() +
+    geom_rect(data=DemRes, aes(xmin=as.POSIXct(Start), xmax=as.POSIXct(End), ymin=-Inf, ymax=Inf, fill=Event_Type), alpha=0.2) +
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Room1_TempF/5, color = "Room Temperature"),size=0.3) +
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=OA_TempF/5, color = "Outdoor Air Temperature"),size=0.3) + 
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=HP_Power, color = "Outdoor Unit Power"),size=0.3) + 
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
+    scale_y_continuous(name = "Power (kW)",
+                       limits = c(-4, 20),
+                       sec.axis = sec_axis(~.*5, name ="Temperature (F)")) +
+    scale_color_manual(name = "", breaks = c("Auxiliary Power","Outdoor Unit Power","Outdoor Air Temperature","Room Temperature"),
+                       values = c("#E69F00","gray","#009E73","black","#56B4E9","#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
+    labs(title=paste0("Demand response event plot for site ", site),x="") +
+    theme_bw() +
+    xlim(c(Data$Timestamp[1], Data$Timestamp[nrow(Data)])) +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.5),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
+    guides(color=guide_legend(override.aes=list(size=3)),
+           fill=guide_legend(title="Event Type"))
+}
+DemandResponseTimeSeries("4228VB", "2023-02-09", "2023-02-10")
+# Loop to print. Requires manually deleting of days that do not have events in folder.
 for(id in unique(df$Site_ID)){
   for(d in unique(df$Date[df$Site_ID==id])){
     d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
-    ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
-           plot = OperationTimeSeries(id, d, d1),
-           path = paste0(wd,'/Graphs/',id, '/Daily Operation/'),
+    ggsave(paste0(id, '_Daily_Demand_Response_',d,'.png'),
+           plot = DemandResponseTimeSeries(id, d, d1),
+           path = paste0(wd,'/Graphs/Demand Response/',id,'/'),
            width=12, height=4, units='in')
   }
 }
 rm(d1,d,id)
 
-# Loop to print daily defrost time series graphs, one for each day for each site
-for(id in unique(df$Site_ID)){
-  for(d in unique(df$Date[df$Site_ID==id])){
-    d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
-    ggsave(paste0(id, '_Daily-Defrost-Cycles_',d,'.png'),
-           plot = DefrostCycleTimeSeries(id, d, d1),
-           path = paste0(wd,'/Graphs/',id, '/Daily Defrost Cycles/'),
-           width=12, height=4, units='in')
-  }
+# Demand Reponse Daily Time Series Investigation
+DemandResponseDaily <- function(site){
+  # Create a dataframe manually with DR event periods
+  DemRes <- DemandResponseEvents %>%
+    mutate(Start = Start %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
+           End = End %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID == site)
+  
+  Data <- df %>% 
+    mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID == site &
+             Hour >= 9 & Hour < 17) %>%
+    group_by(Date) %>%
+    summarize(Timestamp = Timestamp[length(Timestamp)/2],
+              Energy = sum(HP_Power + Aux_Power + Fan_Power, na.rm=T) / 3600,
+              OA_Temp = mean(OA_TempF, na.rm=T),
+              OA_Temp_low = min(OA_TempF, na.rm=T),
+              OA_Temp_high = max(OA_TempF, na.rm=T))
+  
+  ggplot() +
+    geom_rect(data=DemRes, aes(xmin=as.POSIXct(Start), xmax=as.POSIXct(End), ymin=-Inf, ymax=Inf, fill=Event_Type), alpha=0.2) +
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=OA_Temp/2, color = "Outdoor Air Temperature (Avg/High/Low)"),size=1) +
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=Energy, color = "Energy Use"),size=1) + 
+    geom_point(data=Data, aes(x=as.POSIXct(Timestamp), y=OA_Temp/2, color = "Outdoor Air Temperature (Avg/High/Low)"),size=3) +
+    geom_point(data=Data, aes(x=as.POSIXct(Timestamp), y=Energy, color = "Energy Use"),size=3) + 
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=OA_Temp_low/2, color = "Outdoor Air Temperature (Avg/High/Low)"),size=0.5) +
+    geom_line(data=Data, aes(x=as.POSIXct(Timestamp), y=OA_Temp_high/2, color = "Outdoor Air Temperature (Avg/High/Low)"),size=0.5) +
+    scale_y_continuous(name = "Energy (kWh)",
+                       # limits = c(-4, 20),
+                       sec.axis = sec_axis(~.*2, name ="Temperature (F)")) +
+    labs(title=paste0("Demand response energy and temperature (9AM-5PM) plot for site ", site),x="", color="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.5),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
+    guides(color=guide_legend(override.aes=list(size=3)),
+           fill=guide_legend(title="Event Type"))
 }
-rm(d1,d,id)
+# DemandResponseDaily("8220XE")
+## Loop to print
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Demand_Reponse_Full_Period.png'),
+         plot = DemandResponseDaily(id),
+         path = paste0(wd,'/Graphs/Demand Response/',id,'/'),
+         width=12, height=4, units='in')
+}
+rm(id)
 
-
-
-
-
-
-
-## Loop through individual site diagnostic graphs
-# for (id in metadata$Site_ID){
-#   timestart = "12/01/2022 00:00"
-#   timeend = "01/31/2023 00:00"
-#   
-#   heat_capacity_oat <- HeatCapacityOAT(id, timestart, timeend)
-#   heat_capacity_time_series <- HeatOutputTimeSeries(id, 60, timestart, timeend)
-#   elec_usage <- ElecUsage(id, timestart, timeend)
-#   system_operation <- SystemOperationTimeSeries(id, timestart, timeend)
-#   runtime_time_series <- RunTimesTimeSeries(id, timestart, timeend)
-#   
-#   ggsave('HeatCapacity_HeatLoad_v_OAT.png', plot=heat_capacity_oat, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-#   ggsave('HeatCapacity_HeatLoad_TimeSeries.png', plot=heat_capacity_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-#   ggsave('Elec_Use_v_OAT.png', plot=elec_usage, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-#   ggsave('Aux_HP_System_Operation_TimeSeries.png', plot=system_operation, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-#   ggsave('Runtime_TimeSeries.png', plot=runtime_time_series, path=paste0(wd,'/Graphs/',id), width=12, height=4, units='in')
-# }
-
-
-# Produce site comparison graphs
-ggsave('HeatCOP_v_OAT.png', plot=Heat_COP(unique(df$Site_ID), "12/01/2022 00:00", "12/31/2022 00:00"), path=paste0(wd,'/Graphs/Site Comparison'), width=12, height=4, units='in')
-ggsave('AuxHeatPercent_v_OAT.png', plot=AuxHeatUse(unique(df$Site_ID), "12/01/2022 00:00", "12/31/2022 00:00"), path=paste0(wd,'/Graphs/Site Comparison'), width=12, height=4, units='in')
-ggsave('SA_RA_v_OAT.png', plot=SupplyReturnTemp(unique(df$Site_ID), "12/01/2022 00:00", "12/31/2022 00:00"), path=paste0(wd,'/Graphs/Site Comparison'), width=12, height=4, units='in')
+# Demand response graph to compare energy use to another, similar day
+  # date1 should be the starting timestamp of the DR event and date2 starting time for a different day
+DemandResponseComparison <- function(site, date1, date2, event){
+  df1 <- df %>% 
+    mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID == site & 
+             Timestamp >= strptime(date1, format="%F %T", tz=metadata$Timezone[metadata$Site_ID==site]) &
+             Timestamp <= strptime(date1, format="%F %T", tz=metadata$Timezone[metadata$Site_ID==site]) + hours(4)) %>%
+    mutate(Energy = cumsum(HP_Power + Aux_Power + Fan_Power) / 3600)
+  
+  df2 <- df %>% 
+    mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(Site_ID == site & 
+             Timestamp >= strptime(date2, format="%F %T", tz=metadata$Timezone[metadata$Site_ID==site]) &
+             Timestamp <= strptime(date2, format="%F %T", tz=metadata$Timezone[metadata$Site_ID==site]) + hours(4)) %>%
+    mutate(Energy = cumsum(HP_Power + Aux_Power + Fan_Power) / 3600,
+           Timestamp_New = df1$Timestamp)
+  
+    ggplot() +
+      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=Energy, color = event, linetype="Energy"),size=1) + 
+      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=Energy, color = "Comparison Day", linetype="Energy"),size=1) + 
+      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=Room1_TempF/20, color = event, linetype="Room Temperature"),size=1) + 
+      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=Room1_TempF/20, color = "Comparison Day", linetype="Room Temperature"),size=1) + 
+      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=OA_TempF/20, color = event, linetype="OA Temperature"),size=1) + 
+      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=OA_TempF/20, color = "Comparison Day", linetype="OA Temperature"),size=1) + 
+      scale_linetype_manual(name="", values=c("solid","dashed","dotted")) +
+      scale_y_continuous(name = "Cumulative Energy (kWh)",
+                       sec.axis = sec_axis(~.*20, name ="Temperature (F)")) +
+      labs(title=paste0("Demand response event comparison plot for site ", site),x="", color="") +
+      theme_bw() +
+      theme(panel.border = element_rect(colour = "black",fill=NA),
+            panel.grid.major = element_line(size = 0.5),
+            panel.grid.minor = element_line(size = 0.1),
+            plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+            axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+            axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
+      guides(color=guide_legend(override.aes=list(size=3)))
+}
+DemandResponseComparison("4228VB", "2023-02-07 09:00:00", "2023-02-08 09:00:00", "CCW Event")
 
 
