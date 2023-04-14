@@ -96,7 +96,8 @@ read_plus_nrcan_min <- function(file) {fread(file) %>%
            OA_TempF=9/5*`Ambient T (oC)`+32,
            OA_RH=`Ambient RH (%RH)`,
            Room1_TempF=9/5*`Main Floor T-stat T (oC)`+32,
-           Room1_RH=`Main Floor T-stat RH (%RH)`) %>%
+           Room1_RH=`Main Floor T-stat RH (%RH)`,
+           supply_flow_rate_CFM=`Airflow (CFM)`) %>%
     select(Site_ID,Timestamp,SA1_TempF,SA1_RH,RA_TempF,RA_RH,OA_TempF,OA_RH,Room1_TempF,Room1_RH) %>%
     filter(!is.na(Timestamp) & Site_ID %in% sites &
              Timestamp >= timeframe[1] &
@@ -106,22 +107,38 @@ read_plus_nrcan_min <- function(file) {fread(file) %>%
 sites <- c(
            # "2563EH",
            # "2896BR",
-           "4228VB",
+           # "4228VB",
            # "5291QJ",
            # "2458CE",
-           "6950NE",
-           "8220XE",
-           "9944LD",
-           # "5539NO",
+           # "6950NE",
+           # "8220XE",
+           # "9944LD",
+           "5539NO",
            # "6112OH",
            # "7083LM",
            "")
-timeframe <- c(strptime("1/30/2023", format="%m/%d/%Y", tz="UTC"), strptime("2/15/2023", format="%m/%d/%Y", tz="UTC"))
+timeframe <- c(strptime("3/01/2023", format="%m/%d/%Y", tz="UTC"), strptime("4/30/2023", format="%m/%d/%Y", tz="UTC"))
 
 # Read Michaels/E350/NRCan data separately
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
   map_df(~read_plus_michaels(.)) %>% 
-  as.data.frame()
+  as.data.frame() %>% mutate(
+    # Correct RV Volts for before Dec 23--off by a factor of 10
+  RV_Volts = ifelse(Timestamp < strptime("2022-12-23 17:30:00", format="%Y-%m-%d %H:%M:%S", tz="UTC"), RV_Volts * 10, RV_Volts),
+    # The indoor unit power data at site 9944LD is flipped negative between 1/7/23 and 1/12/23
+  Fan_Power = ifelse(Site_ID == "9944LD" & Fan_Power < 0, - Fan_Power, Fan_Power),
+  AHU_Power = ifelse(Site_ID == "9944LD" & AHU_Power < 0, - AHU_Power, AHU_Power),
+  Aux1_Power = ifelse(Site_ID == "9944LD" & Aux1_Power < 0, - Aux1_Power, Aux1_Power),
+  Aux2_Power = ifelse(Site_ID == "9944LD" & Aux2_Power < 0, - Aux2_Power, Aux2_Power),
+  Aux3_Power = ifelse(Site_ID == "9944LD" & Aux3_Power < 0, - Aux3_Power, Aux3_Power),
+  Aux4_Power = ifelse(Site_ID == "9944LD" & Aux4_Power < 0, - Aux4_Power, Aux4_Power),
+    # Create Aux_Power as sum of individual legs
+  Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T),
+  Room4_TempF=NA, Room4_RH=NA, supply_flow_rate_CFM=NA) %>%
+    # There are some overlaps in data from their data dumps--remove duplicated rows (note this function take a bit of time)
+  distinct(Timestamp, HP_Power, Aux_Power, Fan_Power, .keep_all = T) %>%
+    # Some rows have duplicated timestamps with one having NAs for HP_Power or Fan_Power--remove the NAs
+  arrange(Site_ID, Timestamp, HP_Power, Fan_Power) %>% filter(!duplicated(Timestamp) | (!is.na(Fan_Power) & !is.na(HP_Power)))
 
   # E350 data read one-minute and one-second data separately
 df_e350_min <- list.files(path = paste0(wd, "/Raw Data/Energy350/1-Minute"),pattern="*.csv", full.names=T) %>% 
@@ -137,7 +154,9 @@ df_nrcan_min <- list.files(path = paste0(wd, "/Raw Data/NRCan/1-Minute"),pattern
   as.data.frame()
 df_nrcan_sec <- list.files(path = paste0(wd, "/Raw Data/NRCan/5-Second"),pattern="*.csv", full.names=T) %>% 
   map_df(~read_plus_nrcan_sec(.)) %>% 
-  as.data.frame()
+  as.data.frame() %>% mutate(
+    # Create Aux_Power as sum of individual legs
+    Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power), na.rm=T))
 
 
 # Metadata file to append time zone and other characteristics
@@ -158,15 +177,6 @@ trane_rv <- list.files(path = paste0(wd, "/Trane-RV-Thermostat-data/TraneTech_Na
            Timestamp >= timeframe[1] &
            Timestamp <= timeframe[2]) %>%
   unique()
-# Trane RV data investigation
-# trane_NA_summary_table <- trane_rv %>%
-#   group_by(Site_ID, date(with_tz(Timestamp, tzone="US/Mountain"))) %>%
-#   summarize(Perc_NA_values = round(sum(is.na(DEFROST_ON_1))*100/ n(), 1),
-#             Perc_complete_1sec_data = round(n()*100 / 86400, 1),
-#             Perc_duplicated = round(100 - length(unique(Timestamp))*100 / n(), 1))
-# write.csv(trane_NA_summary_table,
-#           file=paste0(wd, "/Graphs/Trane_RV_Data_Summary.csv"),
-#           row.names=F)
 
 # Pull OAT data from Sam's python script
   # Will need to change if we get multiple sites
@@ -174,14 +184,12 @@ eew <- list.files(path = paste0(wd, "/ee_weather_data"),pattern="*.csv", full.na
   map_df(~fread(.)) %>% 
   as.data.frame() %>%
   mutate(Site_ID = "5539NO",
-         Timestamp = with_tz(force_tz(index, tzone="US/Eastern"), tz="UTC"),
-         OA_TempF_EEW = .[[3]] * 9/5 + 32) %>%
+         Timestamp = with_tz(force_tz(timestamp, tzone="UTC"), tz="UTC"),
+         OA_TempF_EEW = outdoor_air_temp_degC * 9/5 + 32) %>%
   select(Site_ID, Timestamp, OA_TempF_EEW) %>%
   filter(Site_ID %in% sites &
            Timestamp >= timeframe[1] &
            Timestamp <= timeframe[2])
-
-
 
 
 ## Merge E350 dataframes together into one and clean
@@ -197,52 +205,10 @@ df_e350 <- merge(
     # Merge weather data
   merge(eew, by=c("Site_ID", "Timestamp"), all.x=T, all.y=F) %>%
   arrange(Site_ID, Timestamp) %>%
-  mutate(SA3_TempF = NA, SA3_RH = NA, SA4_TempF = NA, SA4_RH = NA)
+  mutate(SA3_TempF = NA, SA3_RH = NA, SA4_TempF = NA, SA4_RH = NA,
+         supply_flow_rate_CFM = NA)
 
 rm(df_e350_min, df_e350_sec)
-
-  # Trane RV data is every four seconds for site 4228VB, so need to fill in gaps to defrost mode
-    # There is some missing data, so we need to add a counter as to not interpolate
-    # more than four missing rows in a row.
-# trane_defrost_interp <- function(time, defrost_on, site){
-#   counter = 0
-#   for(row in 2:length(time)){
-#     if(time[row] < trane_rv$Timestamp[1] | 
-#        time[row] > trane_rv$Timestamp[nrow(trane_rv)] |
-#        site[row] != "4228VB"){
-#       # If outside of trane_rv time range or not the 4228VB site, skip
-#       next
-#     } else if (!is.na(defrost_on[row])){
-#       # If is not NA, leave row as is and reset counter
-#       counter = 0
-#     } else if (counter >= 4){
-#       # If counter is greater than or equal to four seconds, then keep skipping until we get a non-NA row
-#       next
-#     } else {
-#       df_e350$DEFROST_ON_1[row] <- df_e350$DEFROST_ON_1[row-1]
-#       counter = counter + 1
-#     }
-#   }
-# }
-# This function is taking way too long for me, so I'm making a much faster
-# group_by option, not quite as accurate but I think good enough for our purposes.
-  #df_e350$DEFROST_ON_1 <- trane_defrost_interp(df_e350$Timestamp, df_e350$DEFROST_ON_1, df_e350$Site_ID)
-# Ideally, we would do 4-5 second breaks, but with data sometimes reporting less frequently,
-  # 20 second breaks are safer for not missing any defrost points.
-
-# For site 4228VB only:
-df_e350 <- df_e350 %>% group_by(Site_ID, Break=cut(Timestamp, breaks="20 secs")) %>%
-  mutate(DEFROST_ON_1=ceiling(mean(DEFROST_ON_1, na.rm=T))) %>% ungroup() %>%
-  select(-Break)
-
-# Fill in missing OAT data for site 5539NO
-df_e350 <- df_e350 %>% group_by(Site_ID, Break=cut(Timestamp, breaks="1 hour")) %>%
-  mutate(OA_TempF_EEW = mean(OA_TempF_EEW, na.rm=T)) %>% ungroup() %>%
-  mutate(OA_TempF = ifelse(is.na(OA_TempF) & Site_ID=="5539NO", OA_TempF_EEW, OA_TempF)) %>%
-  select(-OA_TempF_EEW, -Break)
-
-rm(trane_rv, eew)
-
 
 ## Merge NRCan dataframes together into one and clean
 df_nrcan <- merge(
@@ -259,75 +225,24 @@ df_nrcan <- merge(
 
 rm(df_nrcan_min, df_nrcan_sec)
 
-
-## Remove dates with missing critical data
-  # Note: filter is what we are keeping, so needs to be opposite of what removing.
-  # I think it is best to remove entire days, to make energy calcs comparable on daily basis.
-df_e350 <- df_e350 %>% 
-  # Site 4228VB 
-    # Appears to be missing Aux power data before Dec 20, 2022, doesn't stabilize until evening of 21st. 
-  filter(Site_ID != "4228VB" | Timestamp >= strptime("2022-12-22", "%Y-%m-%d", tz="US/Mountain")) %>%
-    # December 30th 18:00 to January 2nd 18:00, the HP Power, and possibly at times Aux Power, 
-    # is missing or too low to be reasonable. Delete these days completely?
-    # HP had "operational issues" 3/02/23 - 03/06/23 and should be removed
-  filter(Site_ID != "4228VB" | Timestamp < strptime("2023-03-03", "%Y-%m-%d", tz="US/Mountain") | Timestamp > strptime("2023-03-06", "%Y-%m-%d", tz="US/Mountain")) %>%
-  # Site 5539NO
-    # All data is not present until 2/14/23 afternoon (still no OAT but using other data source as substitute)
-  filter(Site_ID != "5539NO" | Timestamp >= strptime("2023-02-15", "%Y-%m-%d", tz="US/Eastern"))
   
-df_michaels <- df_michaels %>%
-  # Site 8220XE:
-    # Data doesn't stabilize until Dec 12th at 12:00, use Dec 13th as starting point.
-  filter(Site_ID != "8220XE" | Timestamp >= strptime("2022-12-13", "%Y-%m-%d", tz="US/Central")) %>%
-  # Site 6950NE:
-    # Data doesn't stabilize until December 10th, use this day as starting point.
-  filter(Site_ID != "6950NE" | Timestamp >= strptime("2022-12-10", "%Y-%m-%d", tz="US/Central")) %>%
-    # Site 6950NE has one very high OAT, apply filter for all sites:
-  mutate(OA_TempF=replace(OA_TempF, OA_TempF > 150, NA)) %>%
-  # Site 2896BR:
-    # Data doesn't stabilize until Feb 1st, use this day as starting point.
-  # Site 2563EH:
-    # Data doesn't stabilize until Feb 1st, use this day as starting point.
-  # Site 7083LM:
-  # Site 61120H:
-  # Site 9944LD:
-    # Data doesn't stabilize until Jan 7th, use this day as starting point.
-    # The indoor unit power data at site 9944LD is flipped negative between 1/7/23 and 1/12/23
-  mutate(Fan_Power = ifelse(Site_ID == "9944LD" & Fan_Power < 0, - Fan_Power, Fan_Power),
-         AHU_Power = ifelse(Site_ID == "9944LD" & AHU_Power < 0, - AHU_Power, AHU_Power),
-         Aux1_Power = ifelse(Site_ID == "9944LD" & Aux1_Power < 0, - Aux1_Power, Aux1_Power),
-         Aux2_Power = ifelse(Site_ID == "9944LD" & Aux2_Power < 0, - Aux2_Power, Aux2_Power),
-         Aux3_Power = ifelse(Site_ID == "9944LD" & Aux3_Power < 0, - Aux3_Power, Aux3_Power),
-         Aux4_Power = ifelse(Site_ID == "9944LD" & Aux4_Power < 0, - Aux4_Power, Aux4_Power))
+# For site 4228VB only:
+  # Trane RV data is every four seconds for site 4228VB (and sometimes up to 16 seconds), 
+  # so need to fill in gaps to defrost mode
+df_e350 <- df_e350 %>% group_by(Site_ID, Break=cut(Timestamp, breaks="20 secs")) %>%
+  mutate(DEFROST_ON_1=ceiling(mean(DEFROST_ON_1, na.rm=T))) %>% ungroup() %>%
+  select(-Break)
 
-# df_nrcan <- df_nrcan %>%
-  # Site 5291QJ:
-  # Site 2458CE:
+# For site 5539NO only:
+  # OAT data is only every hour, so need to interpolate to 1-second
+df_e350 <- df_e350 %>% group_by(Site_ID, Break=cut(Timestamp, breaks="1 hour")) %>%
+  mutate(OA_TempF_EEW = mean(OA_TempF_EEW, na.rm=T)) %>% ungroup() %>%
+  mutate(OA_TempF = ifelse(is.na(OA_TempF) & Site_ID=="5539NO", OA_TempF_EEW, OA_TempF)) %>%
+  select(-OA_TempF_EEW, -Break)
 
+rm(trane_rv, eew)
 
-
-
-# Fill in missing temperature data for E350 and NRCan data (only have minute level)
-  # Minute data (when seconds are zero) has temperature data and every second between minutes is NA.
-  # Important that the data is sorted by site and then timestamp, which it should be.
-  # The first process with a loop was taking too much time so I commented it out
-  # and used grouping to make it faster.
-# fillMissingTemp <- function(time, temp){
-#   t = NA # Initialize temperature counter
-#   
-#   for(row in 1:length(time)){
-#     if(second(time[row])==0){
-#     # At the minute level, make a record of the temperatures
-#       t = temp[row]
-#     } else {
-#     # And for all other data, record as the stored value
-#       temp[row] = t
-#     }
-#   }
-#   temp
-# }
-# df_e350$SA1_TempF <- fillMissingTemp(df_e350$Timestamp, df_e350$SA1_TempF)
-
+# For all E350 sites, all 1-minute data needs to be interpolated to 1-second
 df_e350 <- df_e350 %>% 
   group_by(Site_ID, Break=cut(Timestamp, breaks="1 min")) %>%
   mutate(SA1_TempF=mean(SA1_TempF, na.rm=T),
@@ -342,7 +257,7 @@ df_e350 <- df_e350 %>%
   ungroup() %>%
   select(-Break)
 
-  # NRCan
+# For all NRCan sites, all 1-minute data needs to be interpolated to 1-second
 df_nrcan <- df_nrcan %>% 
   group_by(Site_ID, Break=cut(Timestamp, breaks="1 min")) %>%
   mutate(SA1_TempF=mean(SA1_TempF, na.rm=T),
@@ -355,6 +270,34 @@ df_nrcan <- df_nrcan %>%
 
 
 
+
+## Merge data into one dataframe ----
+df <- rbind(
+  df_e350 %>%
+    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
+           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
+           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
+           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode,
+           Room4_TempF, Room4_RH, supply_flow_rate_CFM),
+  df_nrcan %>%
+    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
+           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF,
+           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
+           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode,
+           Room4_TempF, Room4_RH, supply_flow_rate_CFM),
+  df_michaels %>% 
+    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
+           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
+           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
+           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode,
+           Room4_TempF, Room4_RH, supply_flow_rate_CFM)) %>%
+    arrange(Site_ID, Timestamp)
+
+rm(df_michaels, df_e350, df_nrcan)
+
+
+
+
 ## Operating mode and defrost cycles ##
   # Objective: Create a column with operating mode: 
     # Heating-HP Only
@@ -362,101 +305,93 @@ df_nrcan <- df_nrcan %>%
     # Heating-Aux Only
     # Heating-Off
     # Defrost
-    # Note: Only applicable for winter--to determine cooling mode, will 
-      # need to revisit this part and edit, maybe using OAT.
-  # And then a column with the HP heat cycle run times and a column with the 
-  # Defrost mode run times, which will be a length in time in minutes at the last
-  # row of the respective cycle.
+  # Note: Only applicable for winter--need script to identify cooling mode in summer.
 
-  # For Michaels/Lennox, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
-  # For the first data dump of the IA sites (before 2022-12-23 17:30 UTC), the RV_Volts seems to 
-  # be off by a factor of 0.1, so that needs to be corrected manually here.
-  # Use OAT to differentiate cooling and defrost mode, and HP and aux power to 
-  # determine which type of heating mode or cooling mode it is in.
-  # Also, calculate Aux_Power for Michaels data (E350 is already calculated)
-
-df_michaels <- df_michaels %>% mutate(
-  RV_Volts = ifelse(Timestamp < strptime("2022-12-23 17:30:00", format="%Y-%m-%d %H:%M:%S", tz="UTC"),
-                    RV_Volts * 10, RV_Volts),
-  Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power), na.rm=T),
-  Operating_Mode = ifelse(RV_Volts < 25 | HP_Power < 0.1, 
-                          ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
-                          ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
-                          ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                          "Heating-Off"))),
-                              "Defrost"))
-
-  # For Energy350: "~24V is expected when reversing valve is in heating position"
-    # Based on data collected, it looks like 0.6-3.0 V indicates defrost mode
-    # For 4228VB, the pulse seems to be too short to be picked up consistently at the
-    # 1-second level, so need to use dataset provided by Trane with "DEFROST_ON_1"
-df_e350 <- df_e350 %>% mutate(
-  Operating_Mode = 
-    # Site 4228VB has different logic than other E350 sites
-    ifelse(Site_ID == "4228VB",
-           ifelse(  
-             # Trane RV data is missing during the following time periods, so use secondary indicators
+df <- df %>% mutate(Operating_Mode = 
+  # 1. Identify defrost mode                      
+      # For Michaels sites, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
+    ifelse(Site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD") & RV_Volts > 25 & HP_Power < 0.1, "Defrost",
+      # For site 4228VB, Trane provided RV data but there are some gaps which require secondary indicators
+    ifelse(Site_ID == "4228VB" & 
              (Timestamp >= strptime("2023-01-16", "%F", tz="US/Mountain") & Timestamp <= strptime("2023-01-30","%F",tz="US/Mountain") |
-                Timestamp >= strptime("2023-02-22", "%F", tz="US/Mountain") & Timestamp <= strptime("2023-03-04","%F",tz="US/Mountain")) &
-               # Secondary indicators for defrost mode
-               Aux_Power > 4.0 & HP_Power > 0.1 & HP_Power < 1.25 & Fan_Power > 0.35, "Defrost",
-             # For all other time periods, use RV indicator for defrost mode
-             ifelse(!is.na(DEFROST_ON_1) & DEFROST_ON_1==1 & HP_Power > 0.1, "Defrost",
-                    # For all time periods, use power to determine which heating mode
-                    ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
-                           ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
-                                  ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                                         "Heating-Off"))))),
-    # Logic for non-4228VB sites
-           ifelse(RV_Volts > 0.6 & RV_Volts < 3 & HP_Power > 0.2, "Defrost",
-                  ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
-                      ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                         ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
-                             ifelse(HP_Power < 0.1 & Aux_Power < 0.1, "Heating-Off",
-                                    NA)))))))
+              Timestamp >= strptime("2023-02-22", "%F", tz="US/Mountain") & Timestamp <= strptime("2023-03-04","%F",tz="US/Mountain")) &
+             Aux_Power > 4.0 & HP_Power > 0.1 & HP_Power < 1.25 & Fan_Power > 0.35, "Defrost",
+        ifelse(Site_ID == "4228VB" & !is.na(DEFROST_ON_1) & DEFROST_ON_1==1 & HP_Power > 0.1, "Defrost",
+      # For site 5539NO, RV between 0.6 V and 3.0 V indicates defrost mode
+    ifelse(Site_ID == "5539NO" & RV_Volts > 0.6 & RV_Volts < 3 & HP_Power > 0.1, "Defrost",
+      # For site 2458CE, secondary indicators are used
+    ifelse(Site_ID=="2458CE" & HP_Power > 0.1 & Fan_Power > 0.4 & Aux_Power > 4, "Defrost",
+      # For site 5291QJ, secondary indicators are used
+    ifelse(Site_ID=="5291QJ" & HP_Power > 0.5 & HP_Power < 2.2 & Fan_Power > 0.02 & Fan_Power < 0.06 , "Defrost",
+  # 2. If not defrost mode, use power data to determine the mode         
+    ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
+         ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
+                ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
+                       "Heating-Off"))))))))))
 
 
-df_nrcan <- df_nrcan %>% mutate(
-  Aux_Power = rowSums(cbind(Aux1_Power, Aux2_Power, Aux3_Power), na.rm=T),
-  Operating_Mode = ifelse(
-    #Site 2458CE
-    Site_ID=="2458CE",
-    ifelse(HP_Power > 0.1 & Fan_Power > 0.4 & Aux_Power > 4, "Defrost",
-           ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
-                  ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                         ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
-                                ifelse(HP_Power < 0.1 & Aux_Power < 0.1, "Heating-Off", NA))))),
-    # Site 5291QJ
-    ifelse(HP_Power > 0.5 & HP_Power < 2.2 & Fan_Power > 0.02 & Fan_Power < 0.06 , "Defrost",
-           ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
-                  ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                         ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
-                                ifelse(HP_Power < 0.1 & Aux_Power < 0.1, "Heating-Off", NA))))))
-)
+## Remove dates with operational issues or critical data missing for reporting.
+  # Only run this if making COP/capacity graphs.
+  # Note: confusing syntax--filter is what we are keeping, so needs to be opposite of what removing.
+df <- df %>% 
+  # Site 2458CE:
+  
+  
+  # Site 2563EH:
+    # Data doesn't stabilize until Feb 1st, use this day as starting point.
+  filter(Site_ID != "2563EH" | Timestamp >= strptime("2023-02-01", "%F", tz="US/Eastern")) %>%
+  
+  # Site 2896BR:
+    # Data doesn't stabilize until Feb 1st, use this day as starting point.
+  filter(Site_ID != "2896BR" | Timestamp >= strptime("2023-02-01", "%F", tz="US/Eastern")) %>%
+  
+  # Site 4228VB 
+    # Appears to be missing Aux power data before Dec 20, 2022, doesn't stabilize until evening of 21st. Use Dec 22nd as starting point.
+  filter(Site_ID != "4228VB" | Timestamp >= strptime("2022-12-22", "%F", tz="US/Mountain")) %>%
+    # HP had "operational issues" 3/02/23 - 03/06/23 and should be removed
+  filter(Site_ID != "4228VB" | Timestamp < strptime("2023-03-03", "%F", tz="US/Mountain") | Timestamp > strptime("2023-03-06", "%Y-%m-%d", tz="US/Mountain")) %>%
+  
+  # Site 5291QJ:
+    # Manufacturer visited site and was playing with controls Mar 21, 2023 8:30am - 5pm
+  filter(Site_ID != "5291QJ" | Timestamp < strptime("2023-03-03 8:30:00", "%F %T", tz="Canada/Eastern") | Timestamp > strptime("2023-03-03 17:00:00", "%F %T", tz="Canada/Eastern")) %>%
+  
+  # Site 5539NO:
+    # All data is not present until 2/14/23 afternoon (still no OAT but using other data source as substitute)
+  filter(Site_ID != "5539NO" | Timestamp >= strptime("2023-02-15", "%F", tz="US/Eastern")) %>%
+
+  # Site 6950NE:
+    # Data doesn't stabilize until December 10th, use this day as starting point.
+  filter(Site_ID != "6950NE" | Timestamp >= strptime("2022-12-10", "%F", tz="US/Central")) %>%
+
+  # Site 8220XE:
+    # Data doesn't stabilize until Dec 12th at 12:00, use Dec 13th as starting point.
+  filter(Site_ID != "8220XE" | Timestamp >= strptime("2022-12-13", "%F", tz="US/Central")) %>%
+
+  # Site 9944LD:
+    # Data doesn't stabilize until Jan 7th, use this day as starting point.
+  filter(Site_ID != "9944LD" | Timestamp >= strptime("2023-01-07", "%F", tz="US/Mountain")) %>%
+    # NA Fan power and temperature data from Jan 14 - 16 due to eGauge offline.
+  filter(Site_ID != "9944LD" | Timestamp > strptime("2023-01-14", "%F", tz="US/Mountain") | Timestamp < strptime("2023-01-17", "%F", tz="US/Mountain")) %>%
+    # Missing temp data and HP Power and Aux default to 0 kW from Feb 15 noon to Feb 16 noon
+  filter(Site_ID != "9944LD" | Timestamp > strptime("2023-02-15 12:00:00", "%F %T", tz="US/Mountain") | Timestamp < strptime("2023-02-16 12:00:00", "%F %T", tz="US/Mountain"))
+
+  # Site 7083LM:
+  # Site 61120H:
 
 
-# Row bind all data together
-df <- rbind(
-  df_e350 %>%
-    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
-           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
-           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
-           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode,
-           Room4_TempF, Room4_RH),
-  df_nrcan %>%
-    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
-           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF,
-           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
-           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode,
-           Room4_TempF, Room4_RH),
-  df_michaels %>% 
-    select(Site_ID, Timestamp, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux_Power,
-           OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, SA2_RH, RA_TempF, 
-           RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, Room2_RH,
-           Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH, Operating_Mode) %>%
-    mutate(Room4_TempF = NA, Room4_RH = NA)) %>% arrange(Site_ID, Timestamp)
-
-rm(df_michaels, df_e350, df_nrcan)
+## Flag time periods with operational issues
+    # We can use this column to filter data for COP graphs for showing performance 
+    # without operational issues and variation of performance due to reliability.
+    # A "0" denotes no operational issues and a "1" indicates issues
+    # See CCHP Analysis Notebook for more information on these events.
+df <- df %>% mutate(
+  Operational_Issue = ifelse(
+    (Site_ID == "5539NO" & Timestamp >= strptime("2023-04-03", "%F", tz="US/Central")) |
+     (Site_ID == "6950NE" & Timestamp > strptime("2022-12-25 9:00:00", "%F %T", tz="US/Central") & Timestamp < strptime("2022-12-26 15:00:00", "%F %T", tz="US/Central")) |
+      (Site_ID == "9944LD" & Timestamp > strptime("2022-01-31", "%F", tz="US/Mountain")) |
+      (Site_ID == "4228VB" & Timestamp > strptime("2022-12-30", "%F", tz="US/Mountain") & Timestamp < strptime("2023-01-02 18:00:00", "%F %T", tz="US/Mountain")) |
+      (Site_ID == "4228VB" & Timestamp > strptime("2023-03-02", "%F", tz="US/Mountain") & Timestamp < strptime("2023-03-06", "%F", tz="US/Mountain")),
+    1, 0))
 
 
 # Add fields for date, hour, and week day
@@ -480,18 +415,27 @@ for(id in unique(df$Site_ID)){
 }
 
 
+
+
+
   # Supply temperature and humidity calculated as the average of the four quadrants
 df <- df %>% mutate(
   SA_RH = rowMeans(cbind(SA1_RH, SA2_RH, SA3_RH, SA4_RH), na.rm=T),
   SA_TempF = rowMeans(cbind(SA1_TempF, SA2_TempF, SA3_TempF, SA4_TempF), na.rm=T),
-  Room_TempF = rowMeans(cbind(Room1_TempF, Room2_TempF, Room3_TempF, Room4_TempF), na.rm=T))
+  Room_TempF = rowMeans(cbind(Room1_TempF, Room2_TempF, Room3_TempF, Room4_TempF), na.rm=T),
 
   # Add column that determines the number of aux legs (when not in defrost mode)
-df <- df %>% mutate(
+    # Rheem sites are different: Site 55390, the first leg measures around 9 kW,
+    # and at 5291QJ the first leg measures around 12 kW. Will need to update for
+    # Solon, NY once we have data.
   Number_Aux_Legs = ifelse(Operating_Mode == "Defrost" | Aux_Power < 0.1, NA,
-                           ifelse(Aux_Power > 18, 4,
-                                  ifelse(Aux_Power > 13, 3,
-                                         ifelse(Aux_Power > 8, 2, 1)))))
+                                  ifelse(Site_ID == "5539NO" & Aux_Power > 8, 1,
+                                         ifelse(Site_ID == "5291QJ" & Aux_Power > 20, 2,
+                                                ifelse(Site_ID == "5291QJ" & Aux_Power > 10, 1,
+                                                       # All other sites
+                                                       ifelse(Aux_Power > 18, 4,
+                                                              ifelse(Aux_Power > 13, 3,
+                                                                     ifelse(Aux_Power > 8, 2, 1))))))))
 
 # Calculate heat and defrost run cycle duration for heat pump.
   # The "mode" input should be "Heating" or "Defrost".
@@ -540,6 +484,15 @@ runCycleCalc <- function(site, timestamp, operate, mode){
 df$Defrost_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Defrost")
 
 
+## Corrections needed for defrost modes with secondary indicators
+  # See notes for each site in the CCHP Analysis Notebook for more details.
+df <- df %>% mutate(
+  Defrost_Cycle_Runtimes = ifelse((Site_ID=="4228VB" | Site_ID=="5291QJ") & Defrost_Cycle_Runtimes < 1, NA, 
+                                  ifelse(Site_ID=="4228VB" & Defrost_Cycle_Runtimes > 60, NA,
+                                         Defrost_Cycle_Runtimes)))
+
+
+
 
 ### Calculations ----
 
@@ -557,7 +510,7 @@ df <- df %>% mutate(supply_flow_rate_CFM =
     ifelse(Site_ID=="2896BR", 108.64 * (Fan_Power*1000)^0.4405,
     ifelse(Site_ID=="6112OH", 98.457 * (Fan_Power*1000)^0.4346,
     ifelse(Site_ID=="7083LM", 120.66 * (Fan_Power*1000)^0.3657,
-      NA)))))))),
+           supply_flow_rate_CFM)))))))),
  
 
 ## Heating and cooling related calculations:
@@ -770,8 +723,10 @@ for(id in unique(df$Site_ID)){
                 Aux_Power_NA = round(sum(is.na(Aux_Power))*100/ n(),1),
                 Fan_Power_NA = round(sum(is.na(Fan_Power))*100/ n(),1),
                 RV_Volts_NA = round(sum(is.na(RV_Volts))*100/ n(),1),
-                Duplicated_timestamps = round(sum(duplicated(Timestamp))*100/ n(),1),
-                Duplicated_rows = round(100 - n_distinct(Timestamp, HP_Power, Aux_Power, Fan_Power)*100/ n(),1),
+                OA_Temp_NA = round(sum(is.na(OA_TempF))*100/ n(),1),
+                SA_Temp_NA = round(sum(is.na(SA_TempF))*100/ n(),1),
+                Duplicated_timestamps = round(sum(duplicated(Timestamp))*2*100/ n(),1),
+                Duplicated_rows = round((n() - n_distinct(Timestamp, HP_Power, Aux_Power, Fan_Power))*100/ n_distinct(Timestamp, HP_Power, Aux_Power, Fan_Power),1),
                 Data_missing = round(100 - (n() - sum(duplicated(Timestamp)))*100/ 86400, 1)),
             file=paste0(wd, "/Graphs/", id, "/Missing_Power_Data_Summary_", id, ".csv"),
             row.names=F)
@@ -813,10 +768,11 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   size=c(1,1,1,3,3),
                                                   linetype=c(1,1,1,NA,NA))))
 }
-# DefrostCycleTimeSeries("5291QJ", "2023-01-10", "2023-01-11")
+# DefrostCycleTimeSeries("4228VB", "2023-01-09", "2023-01-10")
 # Loop to print daily defrost time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
-  for(d in unique(df$Date[df$Site_ID==id])){
+  dates <- unique(df$Date[df$Site_ID==id])     # Delete first date because it's probably not a full day
+  for(d in dates[-1]){
     d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Defrost-Cycles_',d,'.png'),
            plot = DefrostCycleTimeSeries(id, d, d1),
@@ -824,7 +780,7 @@ for(id in unique(df$Site_ID)){
            width=12, height=4, units='in')
   }
 }
-rm(d1,d,id)
+rm(dates,d1,d,id)
 
 
 
@@ -861,7 +817,8 @@ OperationTimeSeries <- function(site, timestart, timeend){
 # OperationTimeSeries("5291QJ", "2023-01-12", "2023-01-13")
 # Loop to print daily operation time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
-  for(d in unique(df$Date[df$Site_ID==id])){
+  dates <- unique(df$Date[df$Site_ID==id])     # Delete first date because it's probably not a full day
+  for(d in dates[-1]){
     d1 = substr(as.character(strptime(d, "%Y-%m-%d", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
            plot = OperationTimeSeries(id, d, d1),
@@ -869,7 +826,7 @@ for(id in unique(df$Site_ID)){
            width=12, height=4, units='in')
   }
 }
-rm(d1,d,id)
+rm(dates,d1,d,id)
 
 
 # Heating output (Btu/h) and heating load with outdoor air temperature as timeseries
@@ -1291,7 +1248,7 @@ rm(id)
 
 # Demand response graph to compare energy use to another, similar day
   # date1 should be the starting timestamp of the DR event and date2 starting time for a different day
-DemandResponseComparison <- function(site, date1, date2, event){
+DemandResponseComparison <- function(site, date1, date2, event, tempscale){
   df1 <- df %>% 
     mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
     filter(!is.na(HP_Power) & Site_ID == site & 
@@ -1310,13 +1267,13 @@ DemandResponseComparison <- function(site, date1, date2, event){
     ggplot() +
       geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=Energy, color = event, linetype="Energy"),size=1) + 
       geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=Energy, color = "Comparison Day", linetype="Energy"),size=1) + 
-      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=Room_TempF/20, color = event, linetype="Room Temperature"),size=1) + 
-      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=Room_TempF/20, color = "Comparison Day", linetype="Room Temperature"),size=1) + 
-      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=OA_TempF/20, color = event, linetype="OA Temperature"),size=1) + 
-      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=OA_TempF/20, color = "Comparison Day", linetype="OA Temperature"),size=1) + 
+      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=Room_TempF/tempscale, color = event, linetype="Room Temperature"),size=1) + 
+      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=Room_TempF/tempscale, color = "Comparison Day", linetype="Room Temperature"),size=1) + 
+      geom_line(data=df1, aes(x=as.POSIXct(Timestamp), y=OA_TempF/tempscale, color = event, linetype="OA Temperature"),size=1) + 
+      geom_line(data=df2, aes(x=as.POSIXct(Timestamp_New), y=OA_TempF/tempscale, color = "Comparison Day", linetype="OA Temperature"),size=1) + 
       scale_linetype_manual(name="", values=c("solid","dashed","dotted")) +
       scale_y_continuous(name = "Cumulative Energy (kWh)",
-                       sec.axis = sec_axis(~.*2, name ="Temperature (F)")) +
+                       sec.axis = sec_axis(~.*tempscale, name ="Temperature (F)")) +
       labs(title=paste0("Demand response event comparison plot for site ", site),x="", color="") +
       theme_bw() +
       theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -1327,26 +1284,25 @@ DemandResponseComparison <- function(site, date1, date2, event){
             axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
       guides(color=guide_legend(override.aes=list(size=3)))
 }
-DemandResponseComparison("4228VB", "2023-02-02 09:00:00", "2023-02-03 09:00:00", "GCCW Event")
-DemandResponseComparison("4228VB", "2023-02-06 13:00:00", "2023-02-05 13:00:00", "GCMW Event")
-DemandResponseComparison("4228VB", "2023-02-07 13:00:00", "2023-02-08 13:00:00", "CCMW Event")
-DemandResponseComparison("4228VB", "2023-02-09 09:00:00", "2023-02-08 09:00:00", "CCCW Event")
-DemandResponseComparison("6950NE", "2023-02-03 09:00:00", "2023-01-31 09:00:00", "GCCW Event")
-DemandResponseComparison("6950NE", "2023-02-06 13:00:00", "2023-02-05 13:00:00", "GCMW Event")
-# DemandResponseComparison("6950NE", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "CCCW Event")
+DemandResponseComparison("4228VB", "2023-02-02 09:00:00", "2023-02-03 09:00:00", "GCCW Event", 20)
+DemandResponseComparison("4228VB", "2023-02-06 13:00:00", "2023-02-05 13:00:00", "GCMW Event", 20)
+DemandResponseComparison("4228VB", "2023-02-07 13:00:00", "2023-02-08 13:00:00", "CCMW Event", 20)
+DemandResponseComparison("4228VB", "2023-02-09 09:00:00", "2023-02-08 09:00:00", "CCCW Event", 20)
+DemandResponseComparison("6950NE", "2023-02-03 09:00:00", "2023-01-31 09:00:00", "GCCW Event", 20)
+DemandResponseComparison("6950NE", "2023-02-06 13:00:00", "2023-02-05 13:00:00", "GCMW Event", 20)
+# DemandResponseComparison("6950NE", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "CCCW Event", 20)
   # Feb 12-14 at 6950NE has a lot of duplicated rows and it's causing the graph function to fault.
   # I tried using "unique()" and also removing the NA HP Power data, but still couldn't get it to work.
-DemandResponseComparison("6950NE", "2023-02-09 09:00:00", "2023-02-07 09:00:00", "CCMW Event")
-DemandResponseComparison("8220XE", "2023-02-03 09:00:00", "2023-01-31 09:00:00", "GCCW Event")
-DemandResponseComparison("8220XE", "2023-02-10 09:00:00", "2023-02-05 09:00:00", "GCMW Event")
-# DemandResponseComparison("8220XE", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "CCMW Event")
+DemandResponseComparison("6950NE", "2023-02-09 09:00:00", "2023-02-07 09:00:00", "CCMW Event", 20)
+DemandResponseComparison("8220XE", "2023-02-03 09:00:00", "2023-01-31 09:00:00", "GCCW Event", 5)
+DemandResponseComparison("8220XE", "2023-02-10 09:00:00", "2023-02-05 09:00:00", "GCMW Event", 10)
+# DemandResponseComparison("8220XE", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "CCMW Event", 10)
   # Feb 12-14 at 8220XE also has a lot of duplicated rows and it's causing the graph function to fault.
-DemandResponseComparison("8220XE", "2023-02-09 09:00:00", "2023-02-05 09:00:00", "CCCW Event")
-# DemandResponseComparison("9944LD", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "GCCW Event")
+DemandResponseComparison("8220XE", "2023-02-09 09:00:00", "2023-02-05 09:00:00", "CCCW Event", 10)
+# DemandResponseComparison("9944LD", "2023-02-13 09:00:00", "2023-02-12 09:00:00", "GCCW Event", 20)
   # Feb 12-14 at 9944LD also has a lot of duplicated rows and it's causing the graph function to fault.
-DemandResponseComparison("9944LD", "2023-02-02 09:00:00", "2023-02-01 09:00:00", "GCMW Event")
-  # Jan 31-Feb 02 use a lot of energy so need to adjust scale in graph manually from 20 to 2.
-DemandResponseComparison("9944LD", "2023-02-03 09:00:00", "2023-02-05 09:00:00", "CCMW Event")
-DemandResponseComparison("9944LD", "2023-02-10 13:00:00", "2023-02-08 13:00:00", "CCCW Event")
+DemandResponseComparison("9944LD", "2023-02-02 09:00:00", "2023-02-01 09:00:00", "GCMW Event", 2)
+DemandResponseComparison("9944LD", "2023-02-03 09:00:00", "2023-02-05 09:00:00", "CCMW Event", 20)
+DemandResponseComparison("9944LD", "2023-02-10 13:00:00", "2023-02-08 13:00:00", "CCCW Event", 10)
 
 
