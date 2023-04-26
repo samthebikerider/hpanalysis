@@ -1254,7 +1254,7 @@ COPOATBoxWhisker <- function(site){
     filter(Site_ID==site & OA_TempF < 55) %>%
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
     group_by(Site_ID, Date, temp_int) %>%
-    summarize(OA_TempF = mean(OA_TempF, na.rm=T),
+    summarize(OA_TempF = median(OA_TempF, na.rm=T),
               'With Defrost' = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412,
               'Without Defrost' = sum(Heat_Output_Btu_h[Operating_Mode != "Defrost"], na.rm=T)/sum(Total_Power[Operating_Mode != "Defrost"], na.rm=T)/3412) %>%
     gather(Mode, Total_COP_Heating, 'With Defrost':'Without Defrost') %>%
