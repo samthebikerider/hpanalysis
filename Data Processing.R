@@ -105,19 +105,20 @@ read_plus_nrcan_min <- function(file) {fread(file) %>%
 
 # Select sites to read
 sites <- c(
-           # "2563EH",
-           # "2896BR",
-           # "4228VB",
-           # "5291QJ",
-           # "2458CE",
-           # "6950NE",
-           # "8220XE",
-           "9944LD",
-           # "5539NO",
-           # "6112OH",
-           # "7083LM",
-           "")
-timeframe <- c(strptime("1/02/2022", format="%m/%d/%Y", tz="UTC"), strptime("4/30/2023", format="%m/%d/%Y", tz="UTC"))
+  # "2563EH",
+  # "2896BR",
+  # "6112OH",
+  # "6950NE",
+  # "7083LM",  # Still no data for this site.
+  # "8220XE",
+  # "8726VB",
+  "9944LD",
+  # "4228VB",
+  # "5539NO",
+  # "5291QJ",
+  # "2458CE",
+  "")
+timeframe <- c(strptime("3/20/2022", format="%m/%d/%Y", tz="UTC"), strptime("3/01/2023", format="%m/%d/%Y", tz="UTC"))
 
 # Read Michaels/E350/NRCan data separately
 df_michaels <- list.files(path = paste0(wd, "/Raw Data/Michaels"),pattern="*.csv", full.names=T) %>% 
@@ -310,14 +311,15 @@ rm(df_michaels, df_e350, df_nrcan)
     # Heating-HP Only
     # Heating-Aux/HP
     # Heating-Aux Only
-    # Heating-Off
+    # System Off
     # Defrost
+    # Cooling
   # Note: Only applicable for winter--need script to identify cooling mode in summer.
 
 df <- df %>% mutate(Operating_Mode = 
   # 1. Identify defrost mode                      
       # For Michaels sites, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
-    ifelse(Site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD") & RV_Volts > 25 & HP_Power < 0.1, "Defrost",
+    ifelse(Site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH") & RV_Volts > 25 & HP_Power > 0.1, "Defrost",
       # For site 4228VB, Trane provided RV data but there are some gaps which require secondary indicators
     ifelse(Site_ID == "4228VB" & 
              (Timestamp >= strptime("2023-01-16", "%F", tz="US/Mountain") & Timestamp <= strptime("2023-01-30","%F",tz="US/Mountain") |
@@ -334,8 +336,13 @@ df <- df %>% mutate(Operating_Mode =
     ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
          ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
                 ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                       "Heating-Off"))))))))))
+                       "System Off"))))))))))
 
+  # 3. Correct for cooling mode
+df <- df %>% mutate(Operating_Mode=
+          # Michaels sites
+          ifelse(Site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH") & Operating_Mode=="Defrost" & Aux_Power < 0.1 & OA_TempF > 60,
+                 "Cooling", Operating_Mode))
 
 ## Remove dates with operational issues or critical data missing for reporting.
   # Only run this if making COP/capacity graphs.
@@ -367,6 +374,10 @@ df <- df %>%
     # All data is not present until 2/14/23 afternoon (still no OAT but using other data source as substitute)
   filter(Site_ID != "5539NO" | Timestamp >= strptime("2023-02-15", "%F", tz="US/Eastern")) %>%
 
+  # Site 6112OH:
+    # Data looks regular starting Feb 14--using this as starting point
+  filter(Site_ID != "6112OH" | Timestamp >= strptime("2023-02-14", "%F", tz="US/Eastern")) %>%
+  
   # Site 6950NE:
     # Data doesn't stabilize until December 10th, use this day as starting point.
   filter(Site_ID != "6950NE" | Timestamp >= strptime("2022-12-10", "%F", tz="US/Central")) %>%
@@ -383,8 +394,7 @@ df <- df %>%
     # Missing temp data and HP Power and Aux default to 0 kW from Feb 15 noon to Feb 16 noon
   filter(Site_ID != "9944LD" | Timestamp > strptime("2023-02-15 12:00:00", "%F %T", tz="US/Mountain") | Timestamp < strptime("2023-02-16 12:00:00", "%F %T", tz="US/Mountain"))
 
-  # Site 7083LM:
-  # Site 61120H:
+
 
 
 ## Flag time periods with operational issues
@@ -431,19 +441,17 @@ df <- df %>% mutate(
   SA_RH = rowMeans(cbind(SA1_RH, SA2_RH, SA3_RH, SA4_RH), na.rm=T),
   SA_TempF = rowMeans(cbind(SA1_TempF, SA2_TempF, SA3_TempF, SA4_TempF), na.rm=T),
   Room_TempF = rowMeans(cbind(Room1_TempF, Room2_TempF, Room3_TempF, Room4_TempF), na.rm=T),
+  Total_Power = HP_Power + Aux_Power + Fan_Power,
 
   # Add column that determines the number of aux legs (when not in defrost mode)
-    # Rheem sites are different: Site 55390, the first leg measures around 9 kW,
-    # and at 5291QJ the first leg measures around 12 kW. Will need to update for
-    # Solon, NY once we have data.
-  Number_Aux_Legs = ifelse(Operating_Mode == "Defrost" | Aux_Power < 0.1, NA,
+    # Rheem site 5539N0 has larger unit, the first leg measures around 9 kW. Only one unit.
+    # Will need to update for Solon, NY once we have data.
+  Number_Aux_Legs = ifelse(Operating_Mode == "Defrost" | Aux_Power < 0.01, NA,
                                   ifelse(Site_ID == "5539NO" & Aux_Power > 8, 1,
-                                         ifelse(Site_ID == "5291QJ" & Aux_Power > 20, 2,
-                                                ifelse(Site_ID == "5291QJ" & Aux_Power > 10, 1,
-                                                       # All other sites
-                                                       ifelse(Aux_Power > 18, 4,
-                                                              ifelse(Aux_Power > 13, 3,
-                                                                     ifelse(Aux_Power > 8, 2, 1))))))))
+                                         # All other sites
+                                         ifelse(Aux_Power > 18, 4,
+                                                ifelse(Aux_Power > 13, 3,
+                                                       ifelse(Aux_Power > 8, 2, 1))))))
 
 # Calculate heat and defrost run cycle duration for heat pump.
   # The "mode" input should be "Heating" or "Defrost".
@@ -488,7 +496,7 @@ runCycleCalc <- function(site, timestamp, operate, mode){
   cycle    # Return cycle vector as output
 }
 
-# df$HP_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Heating-HP Only")
+df$HP_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Heating-HP Only")
 df$Defrost_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating_Mode, "Defrost")
 
 
@@ -497,8 +505,9 @@ df$Defrost_Cycle_Runtimes <- runCycleCalc(df$Site_ID, df$Timestamp, df$Operating
 df <- df %>% mutate(
   Defrost_Cycle_Runtimes = ifelse((Site_ID=="4228VB" | Site_ID=="5291QJ" | Site_ID=="2458CE") & 
                                     Defrost_Cycle_Runtimes < 1, NA, 
+                                  ifelse(Site_ID=="6221OH" & Defrost_Cycle_Runtimes < 0.5, NA,
                                   ifelse(Site_ID=="4228VB" & Defrost_Cycle_Runtimes > 60, NA,
-                                         Defrost_Cycle_Runtimes)))
+                                         Defrost_Cycle_Runtimes))))
 
 
 
@@ -542,38 +551,29 @@ df <- df %>% mutate(supply_flow_rate_CFM =
   Supply_Humidity_Ratio = 
     0.62198 * Partial_Water_Pressure_Supply / (97717 - Partial_Water_Pressure_Supply),
   
-  # Heat Pump Heat Output
+  # Heat Output
     # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
-  HP_Heat_Output_Btu_h = ifelse(
-    Operating_Mode == "Cooling", NA,
+  Heat_Output_Btu_h = ifelse(is.na(Operating_Mode), NA,
       0.0715 *                                                # Density of air at 35C (lb/ft3)
       supply_flow_rate_CFM * 60 *                             # CFM * min/hour
       (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
-      (SA_TempF - RA_TempF)) -                                # Temperature delta
-    Aux_Power * 3412,                                         # Subtract auxiliary power, convert kW to btu/hr
-
-  # Total Heat Output
-    # Electric resistance heating is expected to have one unit of power in to one unit of heat output
-  Total_Heat_Output_Btu_h = ifelse(
-    Operating_Mode == "Cooling", NA, HP_Heat_Output_Btu_h + Aux_Power * 3412),
+      (SA_TempF - RA_TempF)),                                 # Temperature delta
+  
 
   # Cooling output
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
-  # HP_Cool_Output_Btu_h = ifelse(
-  #   Operating_Mode == "Heating", NA,
-  #     0.0765 *                                                          # Density of air at 15C (lb/ft3)
+  # HP_Cool_Output_Btu_h = 0.0765 *                                       # Density of air at 15C (lb/ft3)
   #     supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
   #     (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
   #     (SA_TempF - RA_TempF) /
-  #     (1 + Supply_Humidity_Ratio)),
+  #     (1 + Supply_Humidity_Ratio),
   
   
-  # COP HP heating = Heat Output / Power Input
-  HP_COP_Heating = ifelse(Operating_Mode=="Heating-Off", NA, HP_Heat_Output_Btu_h / (HP_Power + Fan_Power) / 3412),
-
-  # COP total heating = Heat Output / Power Input
-  Total_COP_Heating = ifelse(Operating_Mode=="Heating-Off", NA, Total_Heat_Output_Btu_h / 
-  (AHU_Power + HP_Power + Fan_Power) / 3412))
+  # COP heating = Heat Output / Power Input
+    # Need to make NA when heating is off otherwise it will be divided by 0 and infinite.
+  # COP_Heating = ifelse(Operating_Mode=="System Off", NA, 
+  #                      Heat_Output_Btu_h / (HP_Power + Aux_Power + Fan_Power) / 3412)
+)
 
 
 
@@ -593,24 +593,27 @@ TimeSeries <- function(site, parameter, interval, timestart, timeend){
   # Look at a time series graph for a given parameter, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be one hour.
   # The time start and end should be a date-time string in 24-hr format for example "4/01/2022 16:00".
-  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
-                Interval = minute(Timestamp) %/% interval) %>% 
+  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])
+                # ,
+                # Interval = minute(Timestamp) %/% interval
+                ) %>% 
     filter(Site_ID == site &
-             
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-    group_by(Site_ID, Date, Hour, Interval) %>% 
-    summarize(Timestamp = Timestamp[1],
-              Parameter = mean(!!as.name(parameter),na.rm=T)) %>%
+    # group_by(Site_ID, Date, Hour, Interval) %>% 
+    # summarize(Timestamp = Timestamp[1],
+              mutate(Parameter = !!as.name(parameter)
+                # Parameter = mean(!!as.name(parameter),na.rm=T)
+                ) %>%
     ggplot(aes(x=as.POSIXct(Timestamp),y=Parameter, color=Site_ID)) +
-    geom_line(size=0.3) + 
+    geom_point(size=0.3) + 
     # geom_hline(aes(yintercept = 0)) +
     labs(title="Time series plot",x="Timestamp",y=parameter, color="Site ID") +
     theme(axis.ticks.y=element_blank(),
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries("4228VB", "Fan_Power", 1,  "2/12/2023 0:00", "2/14/2023 0:00")
+# TimeSeries("6112OH", "HP_Power", 1,  "2/14/2023 16:00", "2/14/2023 17:00")
 
 
 # Investigate NA values for any variable
@@ -669,16 +672,16 @@ RoomTempTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# RoomTempTimeSeries("5539NO", 5, "2/16/2023 00:00", "2/21/2023 00:00")
+# RoomTempTimeSeries("6112OH", 5, "2/16/2023 00:00", "3/10/2023 00:00")
   # Save a sample of data to the folder for each site
     # Adjust dates manually
 for(id in unique(df$Site_ID)){
   ggsave(paste0(id, '_Room_Temperature_Comparison.png'),
-       plot = RoomTempTimeSeries(id, 5, "2/16/2023 00:00", "2/21/2023 00:00"),
+       plot = RoomTempTimeSeries(id, 5, "2/16/2023 00:00", "3/10/2023 00:00"),
        path = paste0(wd,'/Graphs/',id, '/'),
        width=12, height=4, units='in')
 }
-rm(id)
+
 
 # Supply temperature time series comparison chart
 SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
@@ -713,16 +716,16 @@ SupplyTempTimeSeries <- function(site, interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# SupplyTempTimeSeries("5539NO", 5, "2/16/2023 00:00", "2/21/2023 00:00")
+# SupplyTempTimeSeries("6112OH", 5, "2/16/2023 00:00", "2/18/2023 00:00")
 # Save a sample week of data to the folder for each site
   # Adjust date manually
 for(id in unique(df$Site_ID)){
   ggsave(paste0(id, '_Supply_Temperature_Comparison.png'),
-       plot = SupplyTempTimeSeries(id, 5, "2/16/2023 00:00", "2/21/2023 00:00"),
+       plot = SupplyTempTimeSeries(id, 5, "2/16/2023 00:00", "2/18/2023 00:00"),
        path = paste0(wd,'/Graphs/',id, '/'),
        width=12, height=4, units='in')
 }
-rm(id)
+
 
 
 
@@ -783,7 +786,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
                                                   size=c(1,1,1,3,3),
                                                   linetype=c(1,1,1,NA,NA))))
 }
-# DefrostCycleTimeSeries("5291QJ", "2023-04-02", "2023-04-03")
+# DefrostCycleTimeSeries("6112OH", "2023-02-25", "2023-02-26")
 # Loop to print daily defrost time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
   dates <- unique(df$Date[df$Site_ID==id])     # Delete first date because it's probably not a full day
@@ -801,8 +804,6 @@ rm(dates,d1,d,id)
 
 # Power time series comparison chart with OAT and SAT
 OperationTimeSeries <- function(site, timestart, timeend){
-  # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
-  # Interval is in units of minutes, and so the maximum interval would be one hour.
   # The time start and end should be character with format "%Y-%m-%d".
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
     filter(Site_ID == site &
@@ -844,57 +845,70 @@ for(id in unique(df$Site_ID)){
 rm(dates,d1,d,id)
 
 
+# Power, capacity, and COP time series comparison chart with OAT and RAT
+COPTimeSeries <- function(site, timestart, timeend, interval){
+  # The time start and end should be character with format "%Y-%m-%d %H:%M".
+  # Interval is in minutes, at a maximum of 60 mins.
+  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
+                Interval = minute(Timestamp) %/% interval) %>% 
+    filter(Site_ID == site &
+             Timestamp >= strptime(timestart,"%Y-%m-%d %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
+             Timestamp <= strptime(timeend,"%Y-%m-%d %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
+    group_by(Site_ID, Date, Hour, Interval) %>%
+    summarize(Timestamp = Timestamp[1],
+              SA_TempF=mean(SA_TempF, na.rm=T),
+              RA_TempF=mean(RA_TempF, na.rm=T),
+              HP_Power=mean(HP_Power, na.rm=T),
+              Fan_Power=mean(Fan_Power, na.rm=T),
+              Aux_Power=mean(Aux_Power, na.rm=T),
+              Heat_Output=mean(Heat_Output_Btu_h/3412, na.rm=T),
+              COP_Heating=mean(COP_Heating, na.rm=T)) %>%
+    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    geom_line(aes(y=SA_TempF/2, linetype = "Supply Air Temperature"),color="black",size=0.3) + 
+    geom_line(aes(y=RA_TempF/2, linetype = "Return Air Temperature"),color="black",size=0.3) +
+    geom_line(aes(y=HP_Power, color = "Outdoor Unit Power"),size=0.3) + 
+    geom_line(aes(y=Fan_Power, color = "Supply Fan Power"),size=0.3) +
+    geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
+    geom_line(aes(y=Heat_Output, color = "Heat Output"),size=0.3) +
+    geom_line(aes(y=COP_Heating, color = "COP"),size=1) + 
+    scale_y_continuous(name = "Power (kW)",
+                       # limits = c(-4, 25),
+                       sec.axis = sec_axis(~.*2, name ="Temperature (F)")) +
+    scale_color_manual(name = "Power/COP", breaks = c("Auxiliary Power","Outdoor Unit Power","Supply Fan Power", "Heat Output", "COP"),
+                       values = c("#E69F00","#009E73","#56B4E9","#F0E442","#CC79A7")) +
+    scale_linetype_manual(name = "Temperature", values = c("solid","dashed")) +
+    labs(title=paste0("COP and power investigation time series plot for site ", site),x="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.5),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+COPTimeSeries("2896BR", "2023-02-01 6:00", "2023-02-01 18:00", 1)
+
+
 
 ### Time Series Long Term Graphs ----
 
-# Number of defrost run cycles and average length of cycle per day
-# RunTimesTimeSeries <- function(site, timestart, timeend){
-### I'm not sure this graph is needed with the other defrost graphs we have-- Revisit
-  ## I think just percent of time in defrost mode per day would be better.
-#   # Look at a time series graph to see for every day, how many run cycles there are
-#   # and the average length of a cycle is. Plot against outdoor air temperature and humidity.
-#   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>%
-#     filter(Site_ID == site &
-#              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
-#              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-#     group_by(Date) %>% 
-#     summarize(Timestamp = Timestamp[1],
-#               Num_Defrost_Cycles = sum(Defrost_Cycle_Runtimes, na.rm=T),
-#               Average_Defrost_Runtime = mean(Defrost_Cycle_Runtimes,na.rm=T),
-#               OA_Temp = mean(OA_TempF,na.rm=T),
-#               OA_RH = mean(OA_RH,na.rm=T)) %>%
-#     ggplot(aes(x=as.POSIXct(Timestamp))) +
-#     geom_line(aes(y = OA_Temp/2, color="Outdoor Temperature", group=1)) +
-#     geom_line(aes(y = OA_RH/2, color="Outdoor Humidity", group=1)) +
-#     geom_point(size = 2, aes(y = Num_Defrost_Cycles, color="Number of Defrost Cycles", group=1)) +
-#     geom_point(size = 2, aes(y = Average_Defrost_Runtime, color="Average Defrost Cycle Length", group=1)) +
-#     scale_y_continuous(name = "Number of Cycles/Average Cycle Length (mins)",
-#                        sec.axis = sec_axis(~.*2, name ="Humidity (%)/Temperature (F)")) +
-#     scale_color_manual(name = "", values = c("#D55E00","#009E73","grey", "black","#CC79A7","#E69F00","#F0E442")) +
-#     labs(title=paste0("Defrost cycles and outdoor temperature and humidity for site ", site),x="") +
-#     theme_bw() +
-#     theme(panel.border = element_rect(colour = "black",fill=NA),
-#           panel.grid.major = element_line(size = 0.9),
-#           panel.grid.minor = element_line(size = 0.1),
-#           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-#           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-#           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
-#     guides(color=guide_legend(override.aes=list(size=3)))
-# }
-# RunTimesTimeSeries("5539NO", "2/20/2023 00:00", "3/21/2023 00:00")
-
-# Operating mode daily summary
+# 1. Operating mode daily summary
 OperatingModeTime <- function(site, timestart, timeend){
-  # Look at a time series graph of each day to see percent of time in each operating mode
+  # Look at a time series graph of each day to see fraction of time in each operating mode
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
-                Operating_Mode = replace(Operating_Mode, !is.na(Operating_Mode) & 
-                                           (Operating_Mode=="Heating-Off" | Operating_Mode=="Cooling-Off"), "Off")) %>%
+                Operating_Mode = ifelse(is.na(Operating_Mode), "Data Unavailable", Operating_Mode)) %>%
     filter(Site_ID == site &
              Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
              Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-    ggplot(aes(x=Date, fill=Operating_Mode, y=1)) +
+    ggplot(aes(x=as.POSIXct(Date, format="%F", tz=metadata$Timezone[metadata$Site_ID==site]), fill=Operating_Mode, y=1)) +
     geom_bar(position="fill", stat="identity") +
-    labs(title=paste0("Percent of time in each operating mode per day for site ", site),x="", y="", fill="Operating Mode") +
+    scale_x_datetime(date_breaks = "1 week", date_labels = "%F") +
+    scale_fill_manual(name = "Operating Mode", 
+                      breaks = c("Defrost","Heating-HP Only","Heating-Aux Only","Heating-Aux/HP","Cooling","System Off","Data Unavailable"),
+                      values = c("#009E73","#F0E442","#CC3300","#E69F00","#3333FF","#666666","lightgrey")) +
+    labs(title=paste0("Fraction of time in each operating mode per day for site ", site),x="", 
+         y="Fraction of Time") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
@@ -904,39 +918,79 @@ OperatingModeTime <- function(site, timestart, timeend){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) 
 }
-# OperatingModeTime("5539NO", "2/20/2023 00:00", "2/27/2023 00:00")
-  # Loop through to print graphs to folder--manually adjust date.
+# OperatingModeTime("9944LD", "1/20/2023 00:00", "2/27/2023 00:00")
+# Loop through to print graphs to folder--manually adjust date.
 for(id in unique(df$Site_ID)){
   ggsave(paste0(id, '_Operating_Mode_Percent_Time.png'),
-         plot = OperatingModeTime(id, "2/14/2023 00:00", "3/14/2023 00:00"),
+         plot = OperatingModeTime(id, "1/20/2023 00:00", "2/27/2023 00:00"),
          path = paste0(wd,'/Graphs/',id, '/'),
          width=12, height=4, units='in')
 }
-rm(id)
 
-# Electricity usage vs. outdoor temperature
-  # Only one site can be entered at a time.
-  # Use "tempscale" to manually adjust the secondary axis because it will change from site to site.
-  # The last day plotted always has low energy use for some reason.
-DailyElecUsage <- function(site, timestart, timeend, tempscale){
- df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>%    
+
+
+# Number of defrost run cycles and average length of cycle per day
+DailyDefrost <- function(site, timestart, timeend){
+  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>%
     filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site]) &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-    group_by(Site_ID, Date) %>% 
+             Timestamp >= strptime(timestart,"%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==site]) &
+             Timestamp <= strptime(timeend,"%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
+    group_by(Date) %>%
     summarize(Timestamp = Timestamp[1],
-              OA_TempF = mean(OA_TempF, na.rm=T),
-              Energy = sum(HP_Power + Aux_Power + Fan_Power, na.rm=T) / n()) %>%
- ggplot(aes(x = Timestamp)) + 
-    geom_line(size = 1, aes(y = Energy, color="Electricity Usage", group = 1)) +
-    geom_line(size = 1, aes(y = OA_TempF/tempscale, color="Average Outdoor Temperature", group = 1)) +
-    geom_point(size=2, aes(y = Energy), color="red") +
-    geom_point(size=2, aes(y = OA_TempF/tempscale), color="black") +
-    scale_color_manual(values=c("black","red")) +
-    scale_y_continuous(name = "Electricity Use (kWh)",
-                       sec.axis = sec_axis(~.*tempscale, name ="Outdoor Temperature (F)")) +
-    labs(title=paste0("Daily electricity usage and outdoor temperature for site ",site),
-         x="") +
+              Percent_Defrost = sum(Defrost_Cycle_Runtimes, na.rm=T)*100*60/n(),
+              OA_Temp = mean(OA_TempF,na.rm=T),
+              OA_RH = mean(OA_RH,na.rm=T)) %>%
+    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    geom_line(aes(y = OA_Temp/10, color="Outdoor Temperature", group=1)) +
+    geom_line(aes(y = OA_RH/10, color="Outdoor Humidity", group=2)) +
+    geom_point(size = 2, aes(y = Percent_Defrost, color="Defrost Duration")) +
+    geom_line(aes(y = Percent_Defrost , color="Defrost Duration", group=3)) +
+    scale_y_continuous(name = "Percent in Defrost (%)",
+                       sec.axis = sec_axis(~.*10, name ="Humidity (%)/Temperature (F)")) +
+    scale_color_manual(name = "", values = c("#D55E00","grey", "black","#CC79A7","#E69F00","#009E73","#F0E442")) +
+    labs(title=paste0("Defrost cycles and outdoor temperature and humidity for site ", site),x="") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+# DailyDefrost(unique(df$Site_ID), "2/10/2023", "3/10/2023")
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Defrost_Mode_Percent_Time.png'),
+         plot = DailyDefrost(id, "2/20/2023", "3/21/2023"),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
+
+
+
+
+
+### Outdoor Air Graphs ----
+
+
+# 2. Power usage vs. outdoor temperature
+PowerUsageOAT <- function(site){
+  df %>% filter(Site_ID==site & OA_TempF <= 55) %>%
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    group_by(Site_ID, temp_int) %>% 
+    summarize(OA_TempF = median(OA_TempF, na.rm=T),
+              HP_Power = sum(HP_Power, na.rm=T) / n(),
+              Total_Power = sum(Total_Power, na.rm=T) / n()) %>%
+    ggplot(aes(x = OA_TempF)) + 
+    geom_line(size=1, aes(y = HP_Power, color="Heat Pump ODU")) +
+    geom_line(size=1, aes(y = Total_Power, color="System Total")) +
+    geom_point(size=2, aes(y = HP_Power, color="Heat Pump ODU")) +
+    geom_point(size=2, aes(y = Total_Power, color="System Total")) +
+    scale_color_manual(name="", values=c("#009E73", "black")) +
+    scale_x_continuous(breaks = seq(-30, 60, by=10),
+                       minor_breaks = seq(-30, 60, by=5)) +
+    labs(title=paste0("Average power vs outdoor temperature for site ",site),
+         x="Outdoor Temperature (F)", y="Power (kW)") +
     theme_bw() +
     theme(axis.ticks.y=element_blank(),
           panel.border = element_rect(colour = "black",fill=NA),
@@ -946,37 +1000,271 @@ DailyElecUsage <- function(site, timestart, timeend, tempscale){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
   
 }
-# DailyElecUsage("5539NO", "2/20/2023 00:00", "3/10/2023 00:00", 25)
-# Loop through to print graphs to folder--manually adjust date.
+# PowerUsageOAT("9944LD")
+  # Loop through to print graphs to folder.
 for(id in unique(df$Site_ID)){
-  ggsave(paste0(id, '_Daily_Electricity_Usage.png'),
-         plot = DailyElecUsage(id, "2/14/2023 00:00", "3/14/2023 00:00", 25),
+  ggsave(paste0(id, '_Power_vs_OAT.png'),
+         plot = PowerUsageOAT(id),
          path = paste0(wd,'/Graphs/',id, '/'),
          width=12, height=4, units='in')
 }
-rm(id)
+
+
+# 3. Heating mode cycling frequency and duration
+  # To identify short cycling.
+  # ascale is used to match the two axes--can be adjusted manually.
+HeatCycling <- function(site, ascale){
+  df %>% 
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    filter(Site_ID==site & OA_TempF <= 55 & !is.na(temp_int)) %>%
+    group_by(temp_int) %>%
+    summarize(Number_HP_Cycles = sum(!is.na(HP_Cycle_Runtimes))*3600/n(),
+              HP_Cycle_Duration = median(HP_Cycle_Runtimes, na.rm=T),
+              OA_TempF = median(OA_TempF, na.rm=T)) %>%
+  ggplot(aes(x = OA_TempF)) + 
+    geom_point(aes(y = HP_Cycle_Duration, color="Cycle Duration"), size=3) +
+    geom_point(aes(y = Number_HP_Cycles/ascale, color="Cycles Per Hour"), size=3) +
+    geom_line(aes(y=HP_Cycle_Duration, color="Cycle Duration", group=1)) +
+    geom_line(aes(y=Number_HP_Cycles/ascale, color="Cycles Per Hour", group=2)) +
+    scale_color_manual(name="", values=c("black", "#009E73")) +
+    scale_y_continuous(name = "Cycle Duration (mins)",
+                       sec.axis = sec_axis(~.*ascale, name ="Cycles Per Hour")) +
+    scale_x_continuous(breaks = seq(-30, 60, by=10),
+                       minor_breaks = seq(-30, 60, by=5)) +
+    labs(title=paste0("Number of heat pump cycles and duration vs OAT for site ",site),
+         x="Outdoor Air Temperature (F)") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+}
+# HeatCycling("9944LD",0.5)
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Heat_Cycling_vs_OAT.png'),
+         plot = HeatCycling(id, 0.5),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
+
+
+# 4. Defrost mode cycling frequency by OAT bin
+  # ascale is used to match the two axes--can be adjusted manually.
+DefrostCyclingOAT <- function(site, ascale){
+  df %>% 
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55)),
+           Percent_Defrost = NA) %>%
+    filter(Site_ID==site & OA_TempF <= 55 & !is.na(temp_int) & !is.na(Defrost_Cycle_Runtimes)) %>%
+    select(temp_int, Percent_Defrost, Defrost_Cycle_Runtimes) %>%
+    rbind(df %>% filter(Site_ID==site & OA_TempF <= 55) %>%
+            group_by(temp_int=cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+            summarize(Percent_Defrost = sum(Defrost_Cycle_Runtimes, na.rm=T)*100*60/n(),
+                      Defrost_Cycle_Runtimes = NA)) %>%
+    ungroup() %>%
+    ggplot(aes(x = temp_int)) + 
+    geom_boxplot(aes(y = Defrost_Cycle_Runtimes, color="Cycle Duration (Boxplot)"), show.legend = F) +
+    geom_point(aes(y=Percent_Defrost*ascale, color="Percent Time in Defrost"), size=5) +
+    # geom_line(aes(y=Percent_Defrost*ascale, color="Cycles Per Hour", group=1)) +
+    scale_color_manual(name="", values=c("black", "#D55E00")) +
+    scale_y_continuous(name = "Cycle Duration (mins)",
+                       sec.axis = sec_axis(~./ascale, name ="Percent Time in Defrost (%)")) +
+    labs(title=paste0("Percent time in defrost and cycle duration per OAT bin for site ",site),
+         x="Outdoor Air Temperature Bin (F)") +
+    theme_bw() +
+    guides(color = guide_legend(override.aes = list(shape=c(0,19)))) +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+}
+# DefrostCyclingOAT("9944LD",2)
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Defrost_Cycling_vs_OAT_Bin.png'),
+         plot = DefrostCyclingOAT(id, 2),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
+
+
+# 5. Defrost mode cycling frequency by RH bin
+  # ascale is used to match the two axes--can be adjusted manually.
+DefrostCyclingRH <- function(site, ascale){
+  df %>% 
+    mutate(hum_int = cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100)),
+           Percent_Defrost = NA) %>%
+    filter(Site_ID==site & !is.na(Defrost_Cycle_Runtimes) & OA_RH > 0) %>%
+    select(hum_int, Percent_Defrost, Defrost_Cycle_Runtimes) %>%
+    rbind(df %>% filter(Site_ID==site & OA_RH > 0) %>%
+            group_by(hum_int=cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100))) %>%
+            summarize(Percent_Defrost = sum(Defrost_Cycle_Runtimes, na.rm=T)*100*60/n(),
+                      Defrost_Cycle_Runtimes = NA)) %>%
+    ungroup() %>%
+    ggplot(aes(x = hum_int)) + 
+    geom_boxplot(aes(y = Defrost_Cycle_Runtimes, color="Cycle Duration (Boxplot)"), show.legend = F) +
+    geom_point(aes(y=Percent_Defrost*ascale, color="Percent Time in Defrost"), size=5) +
+    # geom_line(aes(y=Percent_Defrost*ascale, color="Cycles Per Hour", group=1)) +
+    scale_color_manual(name="", values=c("black", "#D55E00")) +
+    scale_y_continuous(name = "Cycle Duration (mins)",
+                       sec.axis = sec_axis(~./ascale, name ="Percent Time in Defrost (%)")) +
+    labs(title=paste0("Percent time in defrost and cycle duration per RH bin for site ",site),
+         x="Outdoor Relative Humidity Bin (%)") +
+    theme_bw() +
+    guides(color = guide_legend(override.aes = list(shape=c(0,19)))) +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+}
+DefrostCyclingRH("9944LD",1)
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Defrost_Cycling_vs_RH_Bin.png'),
+         plot = DefrostCyclingRH(id, 1),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
+
+
+
+# 6. Aux power use by OAT bin
+  # The secondary axis scale is an input to be able to adjust manually.
+AuxPowerOATBin <- function(site, scale){
+  df %>% mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    filter(Site_ID==site & !is.na(temp_int)) %>%
+    group_by(temp_int) %>% mutate(Temp_Bin_Time = n(), Avg_Aux_Power = mean(Aux_Power, na.rm=T)) %>% ungroup() %>%
+    group_by(temp_int, Number_Aux_Legs) %>%
+    summarize(Average_Duration = n()*100/mean(Temp_Bin_Time),
+              Avg_Aux_Power = mean(Avg_Aux_Power)) %>%
+    filter(!is.na(Number_Aux_Legs)) %>%
+    ggplot(aes(x=temp_int)) +
+    geom_bar(stat="identity", aes(y = Average_Duration, fill = as.character(Number_Aux_Legs))) +
+    geom_point(aes(y=Avg_Aux_Power/scale, color="Auxiliary Power"), size=5) +
+    geom_line(aes(y=Avg_Aux_Power/scale, group=1), size=1) +
+    scale_color_manual(name="", values = "black") +
+    scale_y_continuous(name = "Percent of Time (%)",
+                       sec.axis = sec_axis(~.*scale, name ="Average Auxiliary Power Draw (kW)")) +
+    labs(title=paste0("Auxiliary heat use (excluding defrost) by outdoor temperature bin for site ", site),x="Temperature (F)", fill="Aux Heat Stage") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+# AuxPowerOATBin("9944LD", 0.1)
+# Print graph to folder--need to manually change scale factor
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Aux_Use_vs_OAT_Bin.png'),
+         plot = AuxPowerOATBin(id, 0.1),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
 
 
 
 
-### Outdoor Air Bin Graphs ----
+# 7. Heating capacity (i.e., heating load) (Btu/h) by OAT bin
+HeatCapacityOATBin <- function(site){
+  df %>% 
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    filter(Site_ID==site & OA_TempF <= 55) %>%
+    group_by(Site_ID, temp_int) %>%
+    summarize('Heat Pump' = mean(Heat_Output_Btu_h - Aux_Power*3412, na.rm=T),
+              'Auxiliary Heat' = mean(Aux_Power*3412, na.rm=T)) %>%
+    gather(Heat_Element, Capacity, 'Heat Pump':'Auxiliary Heat') %>%
+    ggplot(aes(x = temp_int, y = Capacity, fill = Heat_Element)) + 
+    geom_bar(stat="identity", position="stack") +
+    # geom_line(aes(y = Capacity_HP, color = "HP ODU Heat", group=1), size = 1) +
+    # geom_line(aes(y = Capacity_Aux, color = "Auxiliary Heat", group=2), size = 1) +
+    # geom_line(aes(y = Capacity_Total, color = "System Total", group=4), size = 1) +
+    # scale_color_manual(values=c("#CC79A7","#009E73","black","#E69F00")) +
+    labs(title=paste0("Delivered heat capacity per OAT bin for site ",site),
+         x="Outdoor Air Temperature Bin (F)",
+         y="Delivered Heating Capacity (Btu/hr)",
+         fill="Heating Element") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+}
+# HeatCapacityOATBin("9944LD")
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Heat_Capacity_vs_OAT_Bin.png'),
+         plot = HeatCapacityOATBin(id),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
 
-# Heating load and output (Btu/h) vs outdoor air temperature
+
+
+# 8. COP vs outdoor air temperature
+Heat_COP <- function(site){
+  df %>% 
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    filter(Site_ID == site & OA_TempF < 55) %>%
+    group_by(Site_ID, temp_int) %>% 
+    summarize(OA_TempF = median(OA_TempF, na.rm=T),
+              COP_HP = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-HP Only"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-HP Only"], na.rm=T)/3412,
+              COP_HP_Aux = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-Aux/HP"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-Aux/HP"], na.rm=T)/3412,
+              COP_Aux = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-Aux Only"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-Aux Only"], na.rm=T)/3412,
+              COP_Total = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412) %>%
+    ggplot(aes(x = OA_TempF)) + 
+    geom_point(size = 3, aes(y = COP_HP, color = "Heat Pump Only")) +
+    geom_point(size = 3, aes(y = COP_HP_Aux, color = "Heat Pump and Aux")) +
+    geom_point(size = 3, aes(y = COP_Aux, color = "Aux Only")) +
+    geom_point(size = 3, aes(y = COP_Total, color = "System Total")) +
+    geom_line(aes(y = COP_HP, color = "Heat Pump Only", group=1)) +
+    geom_line(aes(y = COP_HP_Aux, color = "Heat Pump and Aux", group=2)) +
+    geom_line(aes(y = COP_Aux, color = "Aux Only", group=3)) +
+    geom_line(aes(y = COP_Total, color = "System Total", group=4)) +
+    scale_color_manual(name="", values = c("#E69F00","#CC79A7","#009E73","black")) +
+    scale_x_continuous(breaks = seq(-30, 60, by=10),
+                       minor_breaks = seq(-30, 60, by=5)) +
+    geom_hline(yintercept=0) +
+    labs(title="Demonstrated COP vs. outdoor air temperature bin",
+         x="Outdoor Temperature (F)",
+         y="COP") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+}
+# Heat_COP("9944LD")
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_COP_vs_OAT_Bin.png'),
+         plot = Heat_COP(id),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
+
+
+
+# 9. COP vs outdoor air temperature in box and whisker
+  # ylimit is set to COP 5, but may need to be adjusted for different sites.
 COPOATBoxWhisker <- function(site){
   df %>% 
-    filter(Site_ID==site, OA_TempF <= 55) %>%
-    group_by(Site_ID, Date, Hour) %>%
+    filter(Site_ID==site & OA_TempF < 55) %>%
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    group_by(Site_ID, Date, temp_int) %>%
     summarize(OA_TempF = mean(OA_TempF, na.rm=T),
-              'With Defrost' = mean(Total_COP_Heating[!is.na(Operating_Mode)], na.rm=T),
-              'Without Defrost' = mean(Total_COP_Heating[!is.na(Operating_Mode) & Operating_Mode != "Defrost"], na.rm=T)) %>%
-    mutate(temp_int = cut(OA_TempF,breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    filter(!is.na(temp_int)) %>%
+              'With Defrost' = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412,
+              'Without Defrost' = sum(Heat_Output_Btu_h[Operating_Mode != "Defrost"], na.rm=T)/sum(Total_Power[Operating_Mode != "Defrost"], na.rm=T)/3412) %>%
     gather(Mode, Total_COP_Heating, 'With Defrost':'Without Defrost') %>%
   ggplot(aes(x = temp_int)) + 
-    geom_boxplot(aes(y = Total_COP_Heating, color = Mode)) +
-    # scale_color_manual(values=c("#CC79A7","#009E73","#E69F00")) +
+    geom_boxplot(aes(y = Total_COP_Heating, color = Mode), outlier.shape = NA, size=0.9) +
+    geom_hline(yintercept = 0) +
+    ylim(c(0,5)) +
+    scale_color_manual(values=c("#CC79A7","#009E73","#E69F00")) +
     labs(title=paste0("COP ranges per OAT bin for site ",site),
-         x="Outdoor Temperature (F)",
+         x="Outdoor Air Temperature Bin (F)",
          y="COP") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -985,30 +1273,30 @@ COPOATBoxWhisker <- function(site){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# COPOATBoxWhisker("5539NO")
+COPOATBoxWhisker("9944LD")
 for(id in unique(df$Site_ID)){
   ggsave(paste0(id, '_COP_Ranges_vs_OAT.png'),
          plot = COPOATBoxWhisker(id),
          path = paste0(wd,'/Graphs/',id, '/'),
          width=12, height=4, units='in')
 }
-rm(id)
 
 
+
+#### Old graphs ----
+# COP vs OAT in a point plot
 COPOATPoint <- function(site){
   df %>% 
     filter(Site_ID==site) %>%
     group_by(Site_ID, Date, Hour) %>%
     summarize(OA_TempF = mean(OA_TempF, na.rm=T),
-              Total_COP_Heating = mean(Total_COP_Heating[!is.na(Operating_Mode)], na.rm=T),
-              Total_COP_Heating_No_Defrost = mean(Total_COP_Heating[!is.na(Operating_Mode) & Operating_Mode != "Defrost"], na.rm=T),
-              HP_COP_Heating = mean(HP_COP_Heating, na.rm=T)) %>%
+              Total_COP_Heating = mean(COP_Heating[Operating_Mode=="Heating-Aux Only" | Operating_Mode=="Heating-Aux/HP"], na.rm=T),
+              HP_COP_Heating = mean(COP_Heating[Operating_Mode=="Heating-HP Only"], na.rm=T)) %>%
     ggplot(aes(x = OA_TempF)) + 
-    geom_point(aes(y = Total_COP_Heating, color = "All Values")) +
-    geom_point(aes(y = Total_COP_Heating_No_Defrost, color = "Without Defrost")) +
+    geom_point(aes(y = Total_COP_Heating, color = "Aux or Aux+HP Heating")) +
     geom_point(aes(y = HP_COP_Heating, color = "HP Only Heating")) +
     scale_color_manual(values=c("#CC79A7","#009E73","#E69F00")) +
-    labs(title=paste0("COP vs OAT by operating mode for site ",site),
+    labs(title=paste0("COP vs OAT by operating mode without defrost for site ",site),
          x="Outdoor Temperature (F)",
          y="COP") +
     theme_bw() +
@@ -1018,113 +1306,78 @@ COPOATPoint <- function(site){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# COPOATPoint("5539NO")
+# COPOATPoint("9944LD")
 for(id in unique(df$Site_ID)){
   ggsave(paste0(id, '_COP_vs_OAT.png'),
          plot = COPOATPoint(id),
          path = paste0(wd,'/Graphs/',id, '/'),
          width=12, height=4, units='in')
 }
-rm(id)
+
+
+
+
+# Percent of time spent in defrost mode per OAT bin
+DefrostOATBin <- function(site){
+  df %>% mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    filter(Site_ID==site & !is.na(temp_int)) %>%
+    group_by(Site_ID, temp_int) %>%
+    summarize(Percent_Time_Defrost = sum(Defrost_Cycle_Runtimes, na.rm=T)*100*60/n()) %>%
+    ggplot(aes(x=temp_int)) +
+    geom_line(aes(y = Percent_Time_Defrost, group=1), size=1) +
+    labs(title=paste0("Defrost cycles duration by outdoor temperature bin for site ", site),x="Temperature (F)", y="Percent of Time (%)") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+DefrostOATBin("9944LD")
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Defrost_Time_vs_OAT_Bin.png'),
+         plot = DefrostOATBin(id),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
+
+# Percent of time spent in defrost mode per RH bin
+DefrostRHBin <- function(site){
+  df %>% mutate(humid_int = cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100))) %>%
+    filter(Site_ID==site & !is.na(humid_int)) %>%
+    group_by(Site_ID, humid_int) %>%
+    summarize(Percent_Time_Defrost = sum(Defrost_Cycle_Runtimes, na.rm=T)*100*60/n()) %>%
+    ggplot(aes(x=humid_int)) +
+    geom_line(aes(y = Percent_Time_Defrost, group=1), size=1) +
+    labs(title=paste0("Defrost cycles duration by humidity bin for site ", site),x="Humidity (%)", y="Percent of Time (%)") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
+    guides(color=guide_legend(override.aes=list(size=3)))
+}
+DefrostRHBin("9944LD")
+for(id in unique(df$Site_ID)){
+  ggsave(paste0(id, '_Defrost_Time_vs_RH_Bin.png'),
+         plot = DefrostRHBin(id),
+         path = paste0(wd,'/Graphs/',id, '/'),
+         width=12, height=4, units='in')
+}
+
+
 
 
 ### Site Comparison Graphs ----
-
-
-# COP vs outdoor air temperature, hourly averages
-  # This graph compares mutliple sites, so the timestart and timeend should be
-  # entered in UTC.
-Heat_COP <- function(site, timestart, timeend){
-  df %>%     
-    filter(Site_ID %in% site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
-             OA_TempF <= 55) %>%
-    group_by(Site_ID, temp_int = cut(OA_TempF,
-                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
-    summarize(COP = mean(HP_COP_Heating, na.rm=T)) %>%
-  ggplot(aes(x = temp_int, y = COP, color = as.character(Site_ID), group=Site_ID)) + 
-    geom_line(size = 1) +
-    geom_point(size=2) +
-    labs(title="Demonstrated COP vs. Outdoor Air Temperature",
-         x="Outdoor Temperature (F)",
-         y="COP",
-         color = "Site") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-}
-# Heat_COP(unique(df$Site_ID), "2/01/2023 00:00", "2/10/2023 00:00")
+  ### NEEDS TO OUTPUT POINTS FOR EACH SITE/MANUFACTURER AND THEN COMPILE TO GRAPH ###
 
 
 
-# Supplemental resistance heat use compared to total energy use by temperature bin
-  # Using 5 degree F intervals like the graph in the powerpoint.
-  # This graph compares mutliple sites, so the timestart and timeend should be
-  # entered in UTC.
-AuxHeatUse <- function(site, timestart, timeend){
-  df %>%     
-    filter(Site_ID %in% site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
-             OA_TempF <= 55) %>%
-    group_by(Site_ID, temp_int = cut(OA_TempF,
-                                     breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
-    summarize(SuppHeat = mean(Aux_Power / (AHU_Power + HP_Power), na.rm=T)) %>%
-    filter(!is.na(temp_int)) %>%
-    ggplot(aes(x = temp_int, y = SuppHeat, color = as.character(Site_ID), group = Site_ID)) + 
-    geom_line(size = 1) +
-    geom_point(size = 2) +
-    labs(title="Supplement Heat Energy Ratio per Outdoor Temperature Bin",
-         x="Outdoor Temperature (F)",
-         y="Ratio of Supplemental Heat to Total Heat Energy (%)",
-         color = "Site") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-  
-}
-# AuxHeatUse(unique(df$Site_ID), "2/01/2023 00:00", "2/10/2023 00:00")
 
-
-# Heat pump return and supply temperature for outdoor temperature bins
-  # This graph compares mutliple sites, so the timestart and timeend should be
-  # entered in UTC.
-SupplyReturnTemp <- function(site, timestart, timeend){
-  df %>%     
-    filter(Site_ID %in% site &
-             Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M") &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M") &
-             OA_TempF <= 55) %>%
-    group_by(Site_ID, temp_int = cut(OA_TempF, breaks=c(-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>% 
-    summarize(SupplyTemp = mean(SA_TempF, na.rm=T),
-              ReturnTemp = mean(RA_TempF, na.rm=T)) %>%
-    filter(!is.na(temp_int)) %>%
-    ggplot(aes(x = temp_int, color = Site_ID)) + 
-    geom_line(size = 1, aes(y = SupplyTemp, linetype="Supply Temperature", group=Site_ID)) +
-    geom_line(size = 1, aes(y = ReturnTemp, linetype="Return Temperature", group=Site_ID)) +
-    geom_point(size=2, aes(y = SupplyTemp), linetype="solid") +
-    geom_point(size=2, aes(y = ReturnTemp), linetype="dashed") +
-    scale_linetype_manual(values=c("dashed","solid")) +
-    labs(title="Supply and Return Temperature per Outdoor Temperature Bin",
-         x="Outdoor Temperature Bin (F)",
-         y="Indoor Temperature (F)") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank(),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-  
-}
-# SupplyReturnTemp(unique(df$Site_ID), "2/01/2023 00:00", "2/10/2023 00:00")
 
 
 
@@ -1242,7 +1495,7 @@ for(id in unique(df$Site_ID)){
          path = paste0(wd,'/Graphs/Demand Response/',id,'/'),
          width=12, height=4, units='in')
 }
-rm(id)
+
 
 # Demand response graph to compare energy use to another, similar day
   # date1 should be the starting timestamp of the DR event and date2 starting time for a different day
