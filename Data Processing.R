@@ -915,7 +915,7 @@ df %>% filter(OA_TempF <= 55) %>%
 temp_min = -15
 
 
-# 1. Operating mode daily summary
+# 1a. Operating mode daily summary
 OperatingModeTime <- function(site, timestart, timeend){
   # Look at a time series graph of each day to see fraction of time in each operating mode
   df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
@@ -925,7 +925,7 @@ OperatingModeTime <- function(site, timestart, timeend){
     ggplot(aes(x=as.POSIXct(Date, format="%F", tz=metadata$Timezone[metadata$Site_ID==site]), fill=Operating_Mode, y=1)) +
     geom_bar(position="fill", stat="identity") +
     scale_x_datetime(date_breaks = "1 week", date_labels = "%F") +
-    scale_fill_manual(name = "Operating Mode", 
+    scale_fill_manual(name = "Operating Mode",
                       breaks = c("Defrost","Heating-HP Only","Heating-Aux Only","Heating-Aux/HP","Cooling","System Off","Data Unavailable"),
                       values = c("#009E73","#F0E442","#CC3300","#E69F00","#3333FF","#666666","lightgrey")) +
     labs(title=paste0("Fraction of time in each operating mode per day for site ", site),x="", 
@@ -937,12 +937,12 @@ OperatingModeTime <- function(site, timestart, timeend){
           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
           axis.text.x = element_text(family = "Times New Roman", angle=-70, hjust=-0.5),
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) 
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) 
 }
-# OperatingModeTime(sitename, "12/15/2022 00:00", "3/30/2023 00:00")
+# OperatingModeTime(sitename, "3/25/2023 00:00", "3/30/2023 00:00")
 # Print graph to folder--manually adjust date.
 ggsave(paste0(sitename, '_Operating_Mode_Percent_Time.png'),
-       plot = OperatingModeTime(sitename, "12/15/2022 00:00", "3/30/2023 00:00"),
+       plot = OperatingModeTime(sitename, "1/01/2023 00:00", "3/30/2023 23:59"),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
@@ -1203,32 +1203,32 @@ ggsave(paste0(sitename, '_Defrost_Cycling_vs_RH_Bin.png'),
 # 6. Aux power use by OAT bin
   # The secondary axis scale is an input to be able to adjust manually.
 AuxPowerOATBin <- function(scale){
-  df %>% mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    filter(OA_TempF <= 55 & Operating_Mode != "Defrost" & OA_TempF > temp_min) %>%
-    group_by(temp_int) %>% 
-    mutate(Temp_Bin_Time = n(), Avg_Aux_Energy = sum(Aux_Power, na.rm=T)*86400/3600/sum(!is.na(Aux_Power))) %>% 
-    ungroup() %>%
+  df %>% filter(OA_TempF <= 55 & Operating_Mode != "Defrost" & OA_TempF > temp_min) %>%
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    # group_by(temp_int) %>% 
+    # mutate(Temp_Bin_Time = n(), Avg_Aux_Energy = sum(Aux_Power, na.rm=T)*86400/3600/sum(!is.na(Aux_Power))) %>% 
+    # ungroup() %>%
     group_by(temp_int, Number_Aux_Legs) %>%
-    summarize(Average_Duration = n()*100/mean(Temp_Bin_Time),
-              Avg_Aux_Energy = mean(Avg_Aux_Energy)) %>%
+    summarize(Average_Duration = n()*100/mean(Temp_Bin_Time)) %>%
+              # Avg_Aux_Energy = mean(Avg_Aux_Energy)
     filter(!is.na(Number_Aux_Legs)) %>%
     ggplot(aes(x=temp_int)) +
     geom_bar(stat="identity", aes(y = Average_Duration, fill = as.character(Number_Aux_Legs))) +
-    geom_point(aes(y=Avg_Aux_Energy/scale, color="Energy (Right Axis)"), size=5) +
-    geom_line(aes(y=Avg_Aux_Energy/scale, group=1), size=1) +
-    scale_color_manual(name="", values = "black") +
-    scale_y_continuous(name = "Percent of Time (%)",
+    # geom_point(aes(y=Avg_Aux_Energy/scale, color="Energy (Right Axis)"), size=5) +
+    # geom_line(aes(y=Avg_Aux_Energy/scale, group=1), size=1) +
+    # scale_color_manual(name="", values = "black") +
+    # scale_y_continuous(name = "Percent of Time (%)",
                        # limits = c(0,100),
-                       sec.axis = sec_axis(~.*scale, name ="Average Energy Use (kWh/day)")) +
-    labs(title=paste0("Auxiliary heat use (excluding defrost) by outdoor temperature bin for site ", sitename),x="Temperature (F)", fill="Aux Stage (Left Axis)") +
+                       # sec.axis = sec_axis(~.*scale, name ="Average Energy Use (kWh/day)")) +
+    labs(title=paste0("Auxiliary heat use (excluding defrost) by outdoor temperature bin for site ", sitename),x="Temperature (F)", fill="Aux Stage") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
           panel.grid.minor = element_line(size = 0.1),
           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
-    guides(color=guide_legend(override.aes=list(size=3)))
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+    # guides(color=guide_legend(override.aes=list(size=3)))
 }
 # AuxPowerOATBin(2)
 # Print graph to folder--need to manually change scale factor
