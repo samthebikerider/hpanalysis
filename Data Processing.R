@@ -108,10 +108,10 @@ metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 
 # Select sites to read
 sites <- c(
-  "2563EH",
+  # "2563EH",
   # "2896BR",
   # "6112OH",
-  # "6950NE",
+  "6950NE",
   # "7083LM",  # Still no data for this site.
   # "8220XE",
   # "8726VB",
@@ -361,7 +361,7 @@ df <- df %>%
   
   # Site 2896BR:
     # Data doesn't stabilize until Feb 1st, use this day as starting point.
-  filter(Site_ID != "2896BR" | Timestamp >= strptime("2023-02-01", "%F", tz="US/Eastern")) %>%
+  filter(Site_ID != "2896BR" | Timestamp >= strptime("2023-02-03", "%F", tz="US/Eastern")) %>%
   
   # Site 4228VB 
     # Appears to be missing Aux power data before Dec 20, 2022, doesn't stabilize until evening of 21st. Use Dec 22nd as starting point.
@@ -584,7 +584,7 @@ df <- df %>% mutate(supply_flow_rate_CFM =
 
 
 ## Set sitename to not have to update for each graph:
-sitename = "2563EH"
+sitename = "6950NE"
 
 
 
@@ -678,11 +678,11 @@ RoomTempTimeSeries <- function(interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# RoomTempTimeSeries(5, "1/16/2023 00:00", "2/10/2023 00:00")
+# RoomTempTimeSeries(5, "2/10/2023 00:00", "3/10/2023 00:00")
   # Save a sample of data to the folder for each site
     # Adjust dates manually
 ggsave(paste0(sitename, '_Room_Temperature_Comparison.png'),
-       plot = RoomTempTimeSeries(5, "1/16/2023 00:00", "2/10/2023 00:00"),
+       plot = RoomTempTimeSeries(5, "2/10/2023 00:00", "3/10/2023 00:00"),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
@@ -720,11 +720,11 @@ SupplyTempTimeSeries <- function(interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# SupplyTempTimeSeries(5, "2/03/2023 00:00", "2/04/2023 00:00")
+# SupplyTempTimeSeries(5, "12/17/2022 00:00", "12/18/2022 00:00")
 # Save a sample week of data to the folder for each site
   # Adjust date manually
 ggsave(paste0(sitename, '_Supply_Temperature_Comparison.png'),
-       plot = SupplyTempTimeSeries(5, "2/03/2023 00:00", "2/04/2023 00:00"),
+       plot = SupplyTempTimeSeries(5, "12/17/2022 00:00", "12/18/2022 00:00"),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
@@ -889,7 +889,7 @@ COPTimeSeries <- function(timestart, timeend, interval){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# COPTimeSeries("2023-02-03 15:00", "2023-02-03 23:00", 1)
+# COPTimeSeries("2023-03-14 06:00", "2023-03-14 12:00", 1)
 
 
 
@@ -898,11 +898,13 @@ COPTimeSeries <- function(timestart, timeend, interval){
 
 
 # 0a. Time flagged as operational issue
+  # Note that hours for NRCan sites should be multiplied by five.
 nrow(df[df$Operational_Issue==1,])/3600
 nrow(df)/3600
 nrow(df[df$Operational_Issue==1,])*100/nrow(df)
 
 # 0b. Table of amount of time spent in each OAT bin
+  # Note that hours for NRCan sites should be multiplied by five.
 df %>% filter(OA_TempF <= 55) %>%
   mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
   group_by(temp_int) %>% 
@@ -910,6 +912,7 @@ df %>% filter(OA_TempF <= 55) %>%
 
 ## Set minimum temperature for temperature bins for when sample size is too small
 temp_min = -15
+temp_max = 55
 
 
 # 1a. Operating mode daily summary
@@ -950,6 +953,7 @@ ggsave(paste0(sitename, '_Operating_Mode_Percent_Time.png'),
 
 # 1b. Table of 1a with temperature and RH
   # Save to file long table with row for every day
+  # NRCan sites need to multiple hours by five
 write.csv(
   df %>% group_by(Date) %>%
     summarize(Hours_Defrost=sum(Operating_Mode=="Defrost", na.rm=T)/3600,
@@ -979,7 +983,7 @@ df %>% summarize(Hours_Defrost=sum(Operating_Mode=="Defrost", na.rm=T)/3600,
 # 1c. Operating mode summary by OAT bin
 OperatingModeOAT <- function(){
   # Look at a time series graph of each day to see fraction of time in each operating mode
-  df %>% filter(OA_TempF <= 55 & OA_TempF > temp_min) %>%
+  df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
     group_by(temp_int, Operating_Mode) %>%
     summarize(Mode_Time=n()) %>%
@@ -1018,7 +1022,7 @@ Operation_5F_all_sites <- function(){
   list.files(path = paste0(wd, "/Graphs/Site Comparison/Operating Time 0-10F/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
-    mutate(Site_Manufacturer = paste0(Site_ID, "-", Manufacturer)) %>% 
+    mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
     ggplot(aes(x=Site_Manufacturer, fill=Operating_Mode, y=Mode_Time)) +
     geom_bar(position="fill", stat="identity") +
     scale_fill_manual(name = "Operating Mode", 
@@ -1054,7 +1058,7 @@ Operation_32F_all_sites <- function(){
   list.files(path = paste0(wd, "/Graphs/Site Comparison/Operating Time 32F Below/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
-    mutate(Site_Manufacturer = paste0(Site_ID, "-", Manufacturer)) %>% 
+    mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
     ggplot(aes(x=Site_Manufacturer, fill=Operating_Mode, y=Mode_Time)) +
     geom_bar(position="fill", stat="identity") +
     scale_fill_manual(name = "Operating Mode", 
@@ -1125,7 +1129,7 @@ DailyDefrost <- function(site, timestart, timeend){
 
 # 2. Power usage vs. outdoor temperature
 PowerUsageOAT <- function(site){
-  df %>% filter(OA_TempF <= 55 & OA_TempF > temp_min) %>%
+  df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
     group_by(Site_ID, temp_int) %>% 
     summarize(OA_TempF = median(OA_TempF, na.rm=T),
@@ -1165,7 +1169,7 @@ ggsave(paste0(sitename, '_Power_vs_OAT.png'),
 HeatCycling <- function(site, ascale){
   df %>% 
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    filter(OA_TempF <= 55 & OA_TempF > temp_min) %>%
+    filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
     group_by(temp_int) %>%
     summarize(Number_HP_Cycles = sum(!is.na(HP_Cycle_Runtimes))*3600/n(),
               HP_Cycle_Duration = mean(HP_Cycle_Runtimes, na.rm=T),
@@ -1203,7 +1207,7 @@ DefrostCyclingOAT <- function(site, ascale){
   df %>% 
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55)),
            Percent_Defrost = NA) %>%
-    filter(OA_TempF <= 55 & !is.na(Defrost_Cycle_Runtimes) & OA_TempF > temp_min) %>%
+    filter(OA_TempF <= temp_max & !is.na(Defrost_Cycle_Runtimes) & OA_TempF > temp_min) %>%
     select(temp_int, Percent_Defrost, Defrost_Cycle_Runtimes) %>%
     rbind(df %>% filter(OA_TempF <= 55) %>%
             group_by(temp_int=cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
@@ -1279,7 +1283,7 @@ ggsave(paste0(sitename, '_Defrost_Cycling_vs_RH_Bin.png'),
 # 6. Aux power use by OAT bin
   # The secondary axis scale is an input to be able to adjust manually.
 AuxPowerOATBin <- function(scale){
-  df %>% filter(OA_TempF <= 55 & Operating_Mode != "Defrost" & OA_TempF > temp_min) %>%
+  df %>% filter(OA_TempF <= temp_max & Operating_Mode != "Defrost" & OA_TempF > temp_min) %>%
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
     group_by(temp_int) %>%
     mutate(Temp_Bin_Time = n()) %>%
@@ -1294,11 +1298,11 @@ AuxPowerOATBin <- function(scale){
     # geom_point(aes(y=Avg_Aux_Energy/scale, color="Energy (Right Axis)"), size=5) +
     # geom_line(aes(y=Avg_Aux_Energy/scale, group=1), size=1) +
     # scale_color_manual(name="", values = "black") +
-    # scale_y_continuous(name = "Percent of Time (%)",
-                       # limits = c(0,100),
-                       # sec.axis = sec_axis(~.*scale, name ="Average Energy Use (kWh/day)")) +
+    scale_y_continuous(name = "Percent of Time (%)",
+                       # sec.axis = sec_axis(~.*scale, name ="Average Energy Use (kWh/day)"),
+                       limits = c(0,100)) +
     labs(title=paste0("Auxiliary heat use (excluding defrost) by outdoor temperature bin for site ", sitename),
-         x="Temperature (F)", fill="Aux Stage", y="Percent of Time (%)") +
+         x="Temperature (F)", fill="Aux Stage") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
@@ -1323,7 +1327,7 @@ ggsave(paste0(sitename, '_Aux_Use_vs_OAT_Bin.png'),
 HeatCapacityOATBin <- function(){
   df %>% 
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    filter(OA_TempF <= 55 & OA_TempF > temp_min) %>%
+    filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
     group_by(temp_int) %>%
     summarize('Heat Pump' = mean(Heat_Output_Btu_h - Aux_Power*3412, na.rm=T),
               'Auxiliary Heat' = mean(Aux_Power*3412, na.rm=T)) %>%
@@ -1358,7 +1362,7 @@ ggsave(paste0(sitename, '_Heat_Capacity_vs_OAT_Bin.png'),
 Heat_COP <- function(){
   df %>% 
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    filter(OA_TempF < 55 & OA_TempF > temp_min) %>%
+    filter(OA_TempF < temp_max & OA_TempF > temp_min) %>%
     group_by(temp_int) %>% 
     summarize(OA_TempF = median(OA_TempF, na.rm=T),
               COP_HP = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-HP Only"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-HP Only"], na.rm=T)/3412,
@@ -1400,7 +1404,7 @@ ggsave(paste0(sitename, '_COP_vs_OAT_Bin.png'),
   # When printing individual site graphs, export the datapoints needed to make this graph 
 write.csv(df %>% 
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-            filter(OA_TempF < 55 & OA_TempF > temp_min) %>%
+            filter(OA_TempF < temp_max & OA_TempF > temp_min) %>%
             group_by(Site_ID, temp_int) %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
                       COP_Total = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412),
@@ -1410,16 +1414,17 @@ Heat_COP_all_sites <- function(){
   list.files(path = paste0(wd, "/Graphs/Site Comparison/COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
-    mutate(Site_Manufacturer = paste0(Site_ID, "-", Manufacturer)) %>% 
+    mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
     ggplot(aes(x = OA_TempF)) + 
     geom_point(size = 3, aes(y = COP_Total, color = Site_Manufacturer)) +
     geom_line(aes(y = COP_Total, color = Site_Manufacturer)) +
     scale_x_continuous(breaks = seq(-30, 60, by=10),
                        minor_breaks = seq(-30, 60, by=5)) +
-    geom_hline(aes(linetype="Challenge Spec (2.4 COP at 5F)", yintercept=2.4)) +
-    geom_vline(xintercept=5, linetype="dashed") +
+    geom_hline(aes(linetype="Challenge Spec 2-4 TR Units (2.4 COP at 5F)", yintercept=2.4)) +
+    geom_hline(aes(linetype="Challenge Spec >4 TR Units (2.1 COP at 5F)", yintercept=2.1)) +
+    geom_vline(xintercept=5) +
     geom_hline(yintercept=0) +
-    scale_linetype_manual(values=c("dashed"), name="") +
+    scale_linetype_manual(values=c("dashed", "dotted"), name="") +
     labs(title="Demonstrated COP vs. outdoor air temperature",
          x="Outdoor Temperature (F)--Median of 5F Bin",
          y="COP",
@@ -1444,7 +1449,7 @@ ggsave('COP_vs_OAT_Bin.png',
   # ylimit is set to COP 5, but may need to be adjusted for different sites.
 COPOATBoxWhisker <- function(site){
   df %>% 
-    filter(OA_TempF < 55 & OA_TempF > temp_min) %>%
+    filter(OA_TempF < temp_max & OA_TempF > temp_min) %>%
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
     group_by(Site_ID, Date, temp_int) %>%
     summarize(OA_TempF = median(OA_TempF, na.rm=T),
@@ -1564,9 +1569,6 @@ for(id in unique(df$Site_ID)){
 
 
 
-
-### Site Comparison Graphs ----
-  ### NEEDS TO OUTPUT POINTS FOR EACH SITE/MANUFACTURER AND THEN COMPILE TO GRAPH ###
 
 
 
