@@ -108,7 +108,7 @@ metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 
 # Select sites to read
 sites <- c(
-  # "2563EH",
+  "2563EH",
   # "2896BR",
   # "6112OH",
   # "6950NE",
@@ -117,7 +117,7 @@ sites <- c(
   # "8726VB",
   # "9944LD",
   # "4228VB",
-  "5539NO",
+  # "5539NO",
   # "5291QJ",
   # "2458CE",
   "")
@@ -576,7 +576,7 @@ df <- df %>% mutate(supply_flow_rate_CFM =
                               ifelse(Site_ID=="8220XE", 0.8,
                                      ifelse(Site_ID=="6950NE", 1, # This site has no aux only modes--maybe look at Dec 17th for aux+HP comparison
                                             ifelse(Site_ID=="9944LD", 0.5,
-                                                   ifelse(Site_ID=="4228VB", 1, # This site still needs to be investigated
+                                                   ifelse(Site_ID=="4228VB", 0.95,
                                                           ifelse(Site_ID=="2896BR", 1,
                                                                  ifelse(Site_ID=="2563EH", 1.5,
                                                                         ifelse(Site_ID=="6112OH", 1.2,
@@ -596,7 +596,7 @@ df <- df %>% mutate(supply_flow_rate_CFM =
 
 
 ## Set sitename to not have to update for each graph:
-sitename = "5539NO"
+sitename = "2563EH"
 
 
 
@@ -732,11 +732,11 @@ SupplyTempTimeSeries <- function(interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# SupplyTempTimeSeries(5, "3/12/2023 00:00", "3/13/2023 00:00")
+# SupplyTempTimeSeries(5, "1/05/2023 00:00", "1/06/2023 00:00")
 # Save a sample week of data to the folder for each site
   # Adjust date manually
 ggsave(paste0(sitename, '_Supply_Temperature_Comparison.png'),
-       plot = SupplyTempTimeSeries(5, "3/12/2023 00:00", "3/13/2023 00:00"),
+       plot = SupplyTempTimeSeries(5, "1/05/2023 00:00", "1/06/2023 00:00"),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
@@ -901,7 +901,7 @@ COPTimeSeries <- function(timestart, timeend, interval){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# COPTimeSeries("2023-03-12 04:00", "2023-03-12 12:00", 1)
+# COPTimeSeries("2023-01-05 04:00", "2023-01-05 15:00", 1)
 
 
 
@@ -920,10 +920,10 @@ nrow(df[df$Operational_Issue==1,])*100/nrow(df)
 df %>% filter(OA_TempF <= 55) %>%
   mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
   group_by(temp_int) %>% 
-  summarize(round(Hours = n()/3600,0))
+  summarize(round(Hours = n()/3600))
 
 ## Set minimum temperature for temperature bins for when sample size is too small
-temp_min = 10
+temp_min = -10
 temp_max = 55
 
 
