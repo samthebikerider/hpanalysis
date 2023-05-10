@@ -111,13 +111,13 @@ sites <- c(
   # "2563EH",
   # "2896BR",
   # "6112OH",
-  "6950NE",
+  # "6950NE",
   # "7083LM",  # Still no data for this site.
   # "8220XE",
   # "8726VB",
   # "9944LD",
   # "4228VB",
-  # "5539NO",
+  "5539NO",
   # "5291QJ",
   # "2458CE",
   "")
@@ -563,6 +563,24 @@ df <- df %>% mutate(supply_flow_rate_CFM =
       (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
       (SA_TempF - RA_TempF)),                                 # Temperature delta
   
+  # Adjusted Heat Output
+    # Many of the sites are significantly affected by SAT sensor placement, which can be
+    # observed from the heat output differing from aux power in aux only mode. The aux heat
+    # is causing the air to not fully mix at the sensors. This factor will adjust the heat
+    # output from the aux contribution only.
+  Heat_Output_Btu_h_adjusted = 
+    # Heat output from HP
+    Heat_Output_Btu_h - Aux_Power * 3412 +
+    # Adjusted aux power
+    Aux_Power * 3412 * ifelse(Site_ID=="5539NO", 1.5,
+                              ifelse(Site_ID=="8220XE", 0.8,
+                                     ifelse(Site_ID=="6950NE", 1, # This site has no aux only modes--maybe look at Dec 17th for aux+HP comparison
+                                            ifelse(Site_ID=="9944LD", 0.5,
+                                                   ifelse(Site_ID=="4228VB", 1, # This site still needs to be investigated
+                                                          ifelse(Site_ID=="2896BR", 1,
+                                                                 ifelse(Site_ID=="2563EH", 1.5,
+                                                                        ifelse(Site_ID=="6112OH", 1.2,
+                                                                               1))))))))
 
   # Cooling output
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
@@ -571,12 +589,6 @@ df <- df %>% mutate(supply_flow_rate_CFM =
   #     (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
   #     (SA_TempF - RA_TempF) /
   #     (1 + Supply_Humidity_Ratio),
-  
-  
-  # COP heating = Heat Output / Power Input
-    # Need to make NA when heating is off otherwise it will be divided by 0 and infinite.
-  # COP_Heating = ifelse(Operating_Mode=="System Off", NA, 
-  #                      Heat_Output_Btu_h / (HP_Power + Aux_Power + Fan_Power) / 3412)
 )
 
 
@@ -584,7 +596,7 @@ df <- df %>% mutate(supply_flow_rate_CFM =
 
 
 ## Set sitename to not have to update for each graph:
-sitename = "6950NE"
+sitename = "5539NO"
 
 
 
@@ -720,11 +732,11 @@ SupplyTempTimeSeries <- function(interval, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# SupplyTempTimeSeries(5, "12/17/2022 00:00", "12/18/2022 00:00")
+# SupplyTempTimeSeries(5, "3/12/2023 00:00", "3/13/2023 00:00")
 # Save a sample week of data to the folder for each site
   # Adjust date manually
 ggsave(paste0(sitename, '_Supply_Temperature_Comparison.png'),
-       plot = SupplyTempTimeSeries(5, "12/17/2022 00:00", "12/18/2022 00:00"),
+       plot = SupplyTempTimeSeries(5, "3/12/2023 00:00", "3/13/2023 00:00"),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
@@ -889,7 +901,7 @@ COPTimeSeries <- function(timestart, timeend, interval){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# COPTimeSeries("2023-03-14 06:00", "2023-03-14 12:00", 1)
+# COPTimeSeries("2023-03-12 04:00", "2023-03-12 12:00", 1)
 
 
 
@@ -908,10 +920,10 @@ nrow(df[df$Operational_Issue==1,])*100/nrow(df)
 df %>% filter(OA_TempF <= 55) %>%
   mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
   group_by(temp_int) %>% 
-  summarize(Hours = n()/3600)
+  summarize(round(Hours = n()/3600,0))
 
 ## Set minimum temperature for temperature bins for when sample size is too small
-temp_min = -15
+temp_min = 10
 temp_max = 55
 
 
@@ -968,12 +980,12 @@ write.csv(
               Avg_RH=mean(OA_RH, na.rm=T)), 
   file=paste0(wd, "/Graphs/", id, "/Daily_Operation_Summary_", id, ".csv"), row.names=F)
 # Copy summary of table into Word document
-df %>% summarize(Hours_Defrost=sum(Operating_Mode=="Defrost", na.rm=T)/3600,
-              Hours_HP_Only=sum(Operating_Mode=="Heating-HP Only", na.rm=T)/3600,
-              Hours_Aux_Only=sum(Operating_Mode=="Heating-Aux Only", na.rm=T)/3600,
-              Hours_HP.Aux=sum(Operating_Mode=="Heating-Aux/HP", na.rm=T)/3600,
-              Hours_System_Off=sum(Operating_Mode=="System Off", na.rm=T)/3600,
-              Hours_Data_Unavailable=sum(is.na(Operating_Mode))/3600,
+df %>% summarize(Hours_Defrost=round(sum(Operating_Mode=="Defrost", na.rm=T)/3600),
+              Hours_HP_Only=round(sum(Operating_Mode=="Heating-HP Only", na.rm=T)/3600),
+              Hours_Aux_Only=round(sum(Operating_Mode=="Heating-Aux Only", na.rm=T)/3600),
+              Hours_HP.Aux=round(sum(Operating_Mode=="Heating-Aux/HP", na.rm=T)/3600),
+              Hours_System_Off=round(sum(Operating_Mode=="System Off", na.rm=T)/3600),
+              Hours_Data_Unavailable=round(sum(is.na(Operating_Mode))/3600),
               Min_Temp=min(OA_TempF, na.rm=T),
               Avg_Temp=mean(OA_TempF, na.rm=T),
               Max_Temp=max(OA_TempF, na.rm=T),
@@ -1443,6 +1455,94 @@ ggsave('COP_vs_OAT_Bin.png',
        path = paste0(wd,'/Graphs/Site Comparison/'),
        width=12, height=4, units='in')
 
+
+# 8c. HP compressor only COP vs outdoor air temperature for each site
+  # When printing individual site graphs, export the datapoints needed to make this graph 
+write.csv(df %>% 
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+            filter(OA_TempF < temp_max & OA_TempF > temp_min & !is.na(Operating_Mode) & 
+                     (Operating_Mode=="Heating-HP Only" | Operating_Mode=="Heating-Aux/HP")) %>%
+            group_by(Site_ID, temp_int) %>%
+            summarize(OA_TempF = median(OA_TempF, na.rm=T),
+                      COP_HP = sum(Heat_Output_Btu_h - 3412*Aux_Power, na.rm=T)/sum(HP_Power + Fan_Power, na.rm=T)/3412),
+          file=paste0(wd, "/Graphs/Site Comparison/HP COP by OAT Bin/", id, ".csv"),
+          row.names=F)
+Heat_COP_HP_all_sites <- function(){
+  list.files(path = paste0(wd, "/Graphs/Site Comparison/HP COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
+    mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
+    ggplot(aes(x = OA_TempF)) + 
+    geom_point(size = 3, aes(y = COP_HP, color = Site_Manufacturer)) +
+    geom_line(aes(y = COP_HP, color = Site_Manufacturer)) +
+    scale_x_continuous(breaks = seq(-30, 60, by=10),
+                       minor_breaks = seq(-30, 60, by=5)) +
+    geom_hline(aes(linetype="Challenge Spec 2-4 TR Units (2.4 COP at 5F)", yintercept=2.4)) +
+    geom_hline(aes(linetype="Challenge Spec >4 TR Units (2.1 COP at 5F)", yintercept=2.1)) +
+    geom_vline(xintercept=5) +
+    geom_hline(yintercept=0) +
+    scale_linetype_manual(values=c("dashed", "dotted"), name="") +
+    labs(title="Demonstrated heat pump compressor COP (excluding defrost) vs. outdoor air temperature",
+         x="Outdoor Temperature (F)--Median of 5F Bin",
+         y="COP",
+         color="Site ID-Manufacturer") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+}
+# Heat_COP_HP_all_sites()
+# Print graph to folder.
+ggsave('HP_COP_vs_OAT_Bin.png',
+       plot = Heat_COP_HP_all_sites(),
+       path = paste0(wd,'/Graphs/Site Comparison/'),
+       width=12, height=4, units='in')
+
+
+# 8d. Adjusted COP vs outdoor air temperature for each site
+  # When printing individual site graphs, export the datapoints needed to make this graph 
+write.csv(df %>% 
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+            filter(OA_TempF < temp_max & OA_TempF > temp_min) %>%
+            group_by(Site_ID, temp_int) %>%
+            summarize(OA_TempF = median(OA_TempF, na.rm=T),
+                      Adjusted_COP_Total = sum(Heat_Output_Btu_h_adjusted, na.rm=T)/sum(Total_Power, na.rm=T)/3412),
+          file=paste0(wd, "/Graphs/Site Comparison/Adjusted COP by OAT Bin/", id, ".csv"),
+          row.names=F)
+Adjusted_Heat_COP_all_sites <- function(){
+  list.files(path = paste0(wd, "/Graphs/Site Comparison/Adjusted COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
+    mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
+    ggplot(aes(x = OA_TempF)) + 
+    geom_point(size = 3, aes(y = Adjusted_COP_Total, color = Site_Manufacturer)) +
+    geom_line(aes(y = Adjusted_COP_Total, color = Site_Manufacturer)) +
+    scale_x_continuous(breaks = seq(-30, 60, by=10),
+                       minor_breaks = seq(-30, 60, by=5)) +
+    geom_hline(aes(linetype="Challenge Spec 2-4 TR Units (2.4 COP at 5F)", yintercept=2.4)) +
+    geom_hline(aes(linetype="Challenge Spec >4 TR Units (2.1 COP at 5F)", yintercept=2.1)) +
+    geom_vline(xintercept=5) +
+    geom_hline(yintercept=0) +
+    scale_linetype_manual(values=c("dashed", "dotted"), name="") +
+    labs(title="Adjusted COP vs. outdoor air temperature",
+         x="Outdoor Temperature (F)--Median of 5F Bin",
+         y="Adjusted COP",
+         color="Site ID-Manufacturer") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+}
+# Adjusted_Heat_COP_all_sites()
+# Print graph to folder.
+ggsave('Adjusted_COP_vs_OAT_Bin.png',
+       plot = Adjusted_Heat_COP_all_sites(),
+       path = paste0(wd,'/Graphs/Site Comparison/'),
+       width=12, height=4, units='in')
 
 
 # 9. COP vs outdoor air temperature in box and whisker
