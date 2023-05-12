@@ -1179,43 +1179,7 @@ DailyDefrost <- function(site, timestart, timeend){
 ### Outdoor Air Graphs ----
 
 
-# 2. Power usage vs. outdoor temperature
-PowerUsageOAT <- function(site){
-  df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
-    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    group_by(Site_ID, temp_int) %>% 
-    summarize(OA_TempF = median(OA_TempF, na.rm=T),
-              HP_Power = sum(HP_Power, na.rm=T) / n(),
-              Total_Power = sum(Total_Power, na.rm=T) / n()) %>%
-    ggplot(aes(x = OA_TempF)) + 
-    geom_line(size=1, aes(y = HP_Power, color="Heat Pump ODU")) +
-    geom_line(size=1, aes(y = Total_Power, color="System Total")) +
-    geom_point(size=2, aes(y = HP_Power, color="Heat Pump ODU")) +
-    geom_point(size=2, aes(y = Total_Power, color="System Total")) +
-    scale_color_manual(name="", values=c("#009E73", "black")) +
-    scale_x_continuous(breaks = seq(-30, 60, by=10),
-                       minor_breaks = seq(-30, 60, by=5)) +
-    labs(title=paste0("Average power vs outdoor temperature for site ",site),
-         x="Outdoor Temperature (F)", y="Power (kW)") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank(),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-  
-}
-# PowerUsageOAT(sitename)
-  # Print graph to folder.
-ggsave(paste0(sitename, '_Power_vs_OAT.png'),
-       plot = PowerUsageOAT(sitename),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
-       width=12, height=4, units='in')
-
-
-
-# 3. Heating mode cycling frequency and duration
+# 2. Heating mode cycling frequency and duration
   # To identify short cycling.
   # ascale is used to match the two axes--can be adjusted manually.
 HeatCycling <- function(site, ascale){
@@ -1232,7 +1196,7 @@ HeatCycling <- function(site, ascale){
     geom_line(aes(y=HP_Cycle_Duration, color="Cycle Duration", group=1)) +
     geom_line(aes(y=Number_HP_Cycles/ascale, color="Cycles Per Hour", group=2)) +
     scale_color_manual(name="", values=c("black", "#009E73")) +
-    scale_y_continuous(name = "Cycle Duration (mins)",
+    scale_y_continuous(name = "Average Cycle Duration (mins)",
                        sec.axis = sec_axis(~.*ascale, name ="Cycles Per Hour")) +
     scale_x_continuous(breaks = seq(-30, 60, by=10),
                        minor_breaks = seq(-30, 60, by=5)) +
@@ -1253,7 +1217,7 @@ ggsave(paste0(sitename, '_Heat_Cycling_vs_OAT.png'),
 
 
 
-# 4. Defrost mode cycling frequency by OAT bin
+# 3. Defrost mode cycling frequency by OAT bin
   # ascale is used to match the two axes--can be adjusted manually.
 DefrostCyclingOAT <- function(site, ascale){
   df %>% 
@@ -1271,7 +1235,7 @@ DefrostCyclingOAT <- function(site, ascale){
     geom_point(aes(y=Percent_Defrost*ascale, color="Percent Time in Defrost"), size=5) +
     # geom_line(aes(y=Percent_Defrost*ascale, color="Cycles Per Hour", group=1)) +
     scale_color_manual(name="", values=c("black", "#D55E00")) +
-    scale_y_continuous(name = "Cycle Duration (mins)",
+    scale_y_continuous(name = "Defrost Cycle Duration (mins)",
                        sec.axis = sec_axis(~./ascale, name ="Percent Time in Defrost (%)")) +
     labs(title=paste0("Percent time in defrost and cycle duration per OAT bin for site ",site),
          x="Outdoor Air Temperature Bin (F)") +
@@ -1292,7 +1256,7 @@ ggsave(paste0(sitename, '_Defrost_Cycling_vs_OAT_Bin.png'),
 
 
 
-# 5. Defrost mode cycling frequency by RH bin
+# 4. Defrost mode cycling frequency by RH bin
   # ascale is used to match the two axes--can be adjusted manually.
 DefrostCyclingRH <- function(site, ascale){
   df %>% 
@@ -1332,7 +1296,7 @@ ggsave(paste0(sitename, '_Defrost_Cycling_vs_RH_Bin.png'),
 
 
 
-# 6. Aux power use by OAT bin
+# 5. Aux power use by OAT bin
   # The secondary axis scale is an input to be able to adjust manually.
 AuxPowerOATBin <- function(scale){
   df %>% filter(OA_TempF <= temp_max & Operating_Mode != "Defrost" & OA_TempF > temp_min) %>%
@@ -1375,7 +1339,7 @@ ggsave(paste0(sitename, '_Aux_Use_vs_OAT_Bin.png'),
 
 
 
-# 7. Heating capacity (i.e., heating load) (Btu/h) by OAT bin
+# 6. Heating capacity (i.e., heating load) (Btu/h) by OAT bin
 HeatCapacityOATBin <- function(){
   df %>% 
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
@@ -1410,49 +1374,7 @@ ggsave(paste0(sitename, '_Heat_Capacity_vs_OAT_Bin.png'),
 
 
 
-# 8a. COP vs outdoor air temperature
-Heat_COP <- function(){
-  df %>% 
-    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    filter(OA_TempF < temp_max & OA_TempF > temp_min) %>%
-    group_by(temp_int) %>% 
-    summarize(OA_TempF = median(OA_TempF, na.rm=T),
-              COP_HP = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-HP Only"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-HP Only"], na.rm=T)/3412,
-              COP_HP_Aux = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-Aux/HP"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-Aux/HP"], na.rm=T)/3412,
-              COP_Aux = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-Aux Only"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-Aux Only"], na.rm=T)/3412,
-              COP_Total = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412) %>%
-    ggplot(aes(x = OA_TempF)) + 
-    geom_point(size = 3, aes(y = COP_HP, color = "Heat Pump Only")) +
-    geom_point(size = 3, aes(y = COP_HP_Aux, color = "Heat Pump and Aux")) +
-    geom_point(size = 3, aes(y = COP_Aux, color = "Aux Only")) +
-    geom_point(size = 3, aes(y = COP_Total, color = "System Total")) +
-    geom_line(aes(y = COP_HP, color = "Heat Pump Only", group=1)) +
-    geom_line(aes(y = COP_HP_Aux, color = "Heat Pump and Aux", group=2)) +
-    geom_line(aes(y = COP_Aux, color = "Aux Only", group=3)) +
-    geom_line(aes(y = COP_Total, color = "System Total", group=4)) +
-    scale_color_manual(name="", values = c("#E69F00","#CC79A7","#009E73","black")) +
-    scale_x_continuous(breaks = seq(-30, 60, by=10),
-                       minor_breaks = seq(-30, 60, by=5)) +
-    geom_hline(yintercept=0) +
-    labs(title=paste0("Demonstrated COP vs. outdoor air temperature for site", sitename),
-         x="Outdoor Temperature (F)--Median of 5F Bin",
-         y="COP") +
-    theme_bw() +
-    theme(axis.ticks.y=element_blank(),
-          panel.border = element_rect(colour = "black",fill=NA),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
-}
-# Heat_COP()
-# Print graph to folder.
-ggsave(paste0(sitename, '_COP_vs_OAT_Bin.png'),
-       plot = Heat_COP(),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
-       width=12, height=4, units='in')
-
-
-# 8b. COP vs outdoor air temperature for each site
+# 7a. COP vs outdoor air temperature for each site
   # When printing individual site graphs, export the datapoints needed to make this graph 
 write.csv(df %>% 
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
@@ -1499,7 +1421,7 @@ for(manu in unique(metadata$Manufacturer)){
        width=12, height=4, units='in')
 }
 
-# 8c. HP compressor only COP vs outdoor air temperature for each site
+# 7b. HP compressor only COP vs outdoor air temperature for each site
   # When printing individual site graphs, export the datapoints needed to make this graph 
 write.csv(df %>% 
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
@@ -1552,7 +1474,7 @@ for(manu in unique(metadata$Manufacturer)){
 }
 
 
-# 8d. Adjusted COP vs outdoor air temperature for each site
+# 7c. Adjusted COP vs outdoor air temperature for each site
   # When printing individual site graphs, export the datapoints needed to make this graph 
 write.csv(df %>% 
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
@@ -1592,7 +1514,7 @@ ggsave('Adjusted_COP_vs_OAT_Bin.png',
        width=12, height=4, units='in')
 
 
-# 9. COP vs outdoor air temperature in box and whisker
+# 8. COP vs outdoor air temperature in box and whisker
   # ylimit is set to COP 5, but may need to be adjusted for different sites.
 COPOATBoxWhisker <- function(site){
   df %>% 
@@ -1660,7 +1582,80 @@ for(id in unique(df$Site_ID)){
 }
 
 
+# Power usage vs. outdoor temperature
+PowerUsageOAT <- function(site){
+  df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    group_by(Site_ID, temp_int) %>% 
+    summarize(OA_TempF = median(OA_TempF, na.rm=T),
+              HP_Power = sum(HP_Power, na.rm=T) / n(),
+              Total_Power = sum(Total_Power, na.rm=T) / n()) %>%
+    ggplot(aes(x = OA_TempF)) + 
+    geom_line(size=1, aes(y = HP_Power, color="Heat Pump ODU")) +
+    geom_line(size=1, aes(y = Total_Power, color="System Total")) +
+    geom_point(size=2, aes(y = HP_Power, color="Heat Pump ODU")) +
+    geom_point(size=2, aes(y = Total_Power, color="System Total")) +
+    scale_color_manual(name="", values=c("#009E73", "black")) +
+    scale_x_continuous(breaks = seq(-30, 60, by=10),
+                       minor_breaks = seq(-30, 60, by=5)) +
+    labs(title=paste0("Average power vs outdoor temperature for site ",site),
+         x="Outdoor Temperature (F)", y="Power (kW)") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+  
+}
+# PowerUsageOAT(sitename)
+# Print graph to folder.
+ggsave(paste0(sitename, '_Power_vs_OAT.png'),
+       plot = PowerUsageOAT(sitename),
+       path = paste0(wd,'/Graphs/',sitename, '/'),
+       width=12, height=4, units='in')
 
+# COP vs outdoor air temperature
+Heat_COP <- function(){
+  df %>% 
+    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+    filter(OA_TempF < temp_max & OA_TempF > temp_min) %>%
+    group_by(temp_int) %>% 
+    summarize(OA_TempF = median(OA_TempF, na.rm=T),
+              COP_HP = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-HP Only"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-HP Only"], na.rm=T)/3412,
+              COP_HP_Aux = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-Aux/HP"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-Aux/HP"], na.rm=T)/3412,
+              COP_Aux = sum(Heat_Output_Btu_h[Operating_Mode=="Heating-Aux Only"], na.rm=T)/sum(Total_Power[Operating_Mode=="Heating-Aux Only"], na.rm=T)/3412,
+              COP_Total = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412) %>%
+    ggplot(aes(x = OA_TempF)) + 
+    geom_point(size = 3, aes(y = COP_HP, color = "Heat Pump Only")) +
+    geom_point(size = 3, aes(y = COP_HP_Aux, color = "Heat Pump and Aux")) +
+    geom_point(size = 3, aes(y = COP_Aux, color = "Aux Only")) +
+    geom_point(size = 3, aes(y = COP_Total, color = "System Total")) +
+    geom_line(aes(y = COP_HP, color = "Heat Pump Only", group=1)) +
+    geom_line(aes(y = COP_HP_Aux, color = "Heat Pump and Aux", group=2)) +
+    geom_line(aes(y = COP_Aux, color = "Aux Only", group=3)) +
+    geom_line(aes(y = COP_Total, color = "System Total", group=4)) +
+    scale_color_manual(name="", values = c("#E69F00","#CC79A7","#009E73","black")) +
+    scale_x_continuous(breaks = seq(-30, 60, by=10),
+                       minor_breaks = seq(-30, 60, by=5)) +
+    geom_hline(yintercept=0) +
+    labs(title=paste0("Demonstrated COP vs. outdoor air temperature for site", sitename),
+         x="Outdoor Temperature (F)--Median of 5F Bin",
+         y="COP") +
+    theme_bw() +
+    theme(axis.ticks.y=element_blank(),
+          panel.border = element_rect(colour = "black",fill=NA),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),)
+}
+# Heat_COP()
+# Print graph to folder.
+ggsave(paste0(sitename, '_COP_vs_OAT_Bin.png'),
+       plot = Heat_COP(),
+       path = paste0(wd,'/Graphs/',sitename, '/'),
+       width=12, height=4, units='in')
 
 # Percent of time spent in defrost mode per OAT bin
 DefrostOATBin <- function(site){
