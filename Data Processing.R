@@ -7,10 +7,6 @@ library(lubridate)
 library(stringr)
 library(data.table)
 
-write.csv(df %>% filter(Timestamp > strptime("2023-03-13 6:00:00", "%F %T", tz="US/Eastern") & 
-                          Timestamp < strptime("2023-03-13 12:00:00", "%F %T", tz="US/Eastern")) %>% 
-            select(Timestamp, HP_Power, Aux_Power, Fan_Power, Total_Power, OA_TempF, SA_TempF, RA_TempF, Heat_Output_Btu_h, Heat_Output_Btu_h_adjusted), 
-          "C:/Users/keen930/Downloads/output.csv", row.names=F)
 
 ### Data Load and Cleaning ----
 
@@ -117,8 +113,8 @@ sites <- c(
   # "6112OH",
   # "6950NE",
   # "7083LM",  # Still no data for this site.
-  # "8220XE",
-  "8726VB",
+  "8220XE",
+  # "8726VB",
   # "9944LD",
   # "4228VB",
   # "5539NO",
