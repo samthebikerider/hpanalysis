@@ -1186,25 +1186,25 @@ ggsave('Heat_Cycling.png',
 
 # 3. Defrost mode cycling frequency by OAT bin
   # ascale is used to match the two axes--can be adjusted manually.
-DefrostCyclingOAT <- function(site, ascale){
+DefrostCyclingOAT <- function(ascale){
   df %>% 
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55)),
-           Percent_Defrost = NA) %>%
-    filter(OA_TempF <= temp_max & !is.na(Defrost_Cycle_Runtimes) & OA_TempF > temp_min) %>%
-    select(temp_int, Percent_Defrost, Defrost_Cycle_Runtimes) %>%
-    rbind(df %>% filter(OA_TempF <= 55) %>%
+           Time_Ratio = NA) %>%
+    filter(OA_TempF <= temp_max & OA_TempF > temp_min & !is.na(Defrost_Cycle_Runtimes)) %>%
+    select(temp_int, Time_Ratio, Defrost_Cycle_Runtimes) %>%
+    rbind(df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
             group_by(temp_int=cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-            summarize(Percent_Defrost = sum(Defrost_Cycle_Runtimes, na.rm=T)*100*60/n(),
+            summarize(Time_Ratio = sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),
                       Defrost_Cycle_Runtimes = NA)) %>%
     ungroup() %>%
     ggplot(aes(x = temp_int)) + 
     geom_boxplot(aes(y = Defrost_Cycle_Runtimes, color="Cycle Duration (Boxplot)"), show.legend = F) +
-    geom_point(aes(y=Percent_Defrost*ascale, color="Percent Time in Defrost"), size=5) +
-    # geom_line(aes(y=Percent_Defrost*ascale, color="Cycles Per Hour", group=1)) +
+    geom_point(aes(y=Time_Ratio*ascale, color="Time Ratio"), size=5) +
+    # geom_line(aes(y=Time_Ratio*ascale, color="Time Ratio", group=1)) +
     scale_color_manual(name="", values=c("black", "#D55E00")) +
     scale_y_continuous(name = "Defrost Cycle Duration (mins)",
-                       sec.axis = sec_axis(~./ascale, name ="Percent Time in Defrost (%)")) +
-    labs(title=paste0("Percent time in defrost and cycle duration per OAT bin for site ",site),
+                       sec.axis = sec_axis(~./ascale, name ="Defrost Time Ratio (%)")) +
+    labs(title=paste0("Defrost time ratio and cycle duration per OAT bin for site ",sitename),
          x="Outdoor Air Temperature Bin (F)") +
     theme_bw() +
     guides(color = guide_legend(override.aes = list(shape=c(0,19)))) +
@@ -1214,36 +1214,40 @@ DefrostCyclingOAT <- function(site, ascale){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# DefrostCyclingOAT(sitename, 2)
-# Print graph to folder.
+# DefrostCyclingOAT(1)
+# Print graph to folder--need to manually change scale factor.
 ggsave(paste0(sitename, '_Defrost_Cycling_vs_OAT_Bin.png'),
-       plot = DefrostCyclingOAT(sitename, 2),
+       plot = DefrostCyclingOAT(1),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
-
+# Print values for site comparison table
+df %>% group_by(Site_ID) %>% summarize(Defrost_Frequency = round(sum(!is.na(Defrost_Cycle_Runtimes))*3600/n(),2),
+                                       Avg_Defrost_Duration = round(mean(Defrost_Cycle_Runtimes,na.rm=T),1),
+                                       Med_Defrost_Duration = round(median(Defrost_Cycle_Runtimes,na.rm=T),1),
+                                       Defrost_Time_Ratio = round(sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),1))
 
 # 4. Defrost mode cycling frequency by RH bin
   # ascale is used to match the two axes--can be adjusted manually.
-DefrostCyclingRH <- function(site, ascale){
+DefrostCyclingRH <- function(ascale){
   df %>% 
     mutate(hum_int = cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100)),
-           Percent_Defrost = NA) %>%
+           Time_Ratio = NA) %>%
     filter(!is.na(Defrost_Cycle_Runtimes) & OA_RH > 0 & OA_RH <= 100) %>%
-    select(hum_int, Percent_Defrost, Defrost_Cycle_Runtimes) %>%
-    rbind(df %>% filter(OA_RH > 0) %>%
+    select(hum_int, Time_Ratio, Defrost_Cycle_Runtimes) %>%
+    rbind(df %>% filter(OA_RH > 0 & OA_RH <= 100) %>%
             group_by(hum_int=cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100))) %>%
-            summarize(Percent_Defrost = sum(Defrost_Cycle_Runtimes, na.rm=T)*100*60/n(),
+            summarize(Time_Ratio = sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),
                       Defrost_Cycle_Runtimes = NA)) %>%
     ungroup() %>%
     ggplot(aes(x = hum_int)) + 
     geom_boxplot(aes(y = Defrost_Cycle_Runtimes, color="Cycle Duration (Boxplot)"), show.legend = F) +
-    geom_point(aes(y=Percent_Defrost*ascale, color="Percent Time in Defrost"), size=5) +
-    # geom_line(aes(y=Percent_Defrost*ascale, color="Cycles Per Hour", group=1)) +
+    geom_point(aes(y=Time_Ratio*ascale, color="Time Ratio"), size=5) +
+    # geom_line(aes(y=Time_Ratio*ascale, color="Time Ratio", group=1)) +
     scale_color_manual(name="", values=c("black", "#D55E00")) +
-    scale_y_continuous(name = "Cycle Duration (mins)",
-                       sec.axis = sec_axis(~./ascale, name ="Percent Time in Defrost (%)")) +
-    labs(title=paste0("Percent time in defrost and cycle duration per RH bin for site ",site),
+    scale_y_continuous(name = "Defrost Cycle Duration (mins)",
+                       sec.axis = sec_axis(~./ascale, name ="Defrost Time Ratio (%)")) +
+    labs(title=paste0("Defrost time ratio and cycle duration per RH bin for site ",sitename),
          x="Outdoor Relative Humidity Bin (%)") +
     theme_bw() +
     guides(color = guide_legend(override.aes = list(shape=c(0,19)))) +
@@ -1253,10 +1257,10 @@ DefrostCyclingRH <- function(site, ascale){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# DefrostCyclingRH(sitename, 5)
+# DefrostCyclingRH(2)
 # Print graph to folder--need to manually change scale factor.
 ggsave(paste0(sitename, '_Defrost_Cycling_vs_RH_Bin.png'),
-       plot = DefrostCyclingRH(sitename, 5),
+       plot = DefrostCyclingRH(2),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
