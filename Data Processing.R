@@ -1273,25 +1273,26 @@ ggsave(paste0(sitename, '_Defrost_Cycling_vs_RH_Bin.png'),
 
 
 
-# 5. Aux staging by OAT bin
-  # The secondary axis scale is an input to be able to adjust manually.
+# 5a. Aux staging by OAT bin without defrost
+  # Save data to file to be able to easily reproduce sites.
 write.csv(df %>% 
-            filter(OA_TempF <= temp_max & Operating_Mode != "Defrost" & OA_TempF > temp_min) %>%
+            filter(OA_TempF <= temp_max & OA_TempF > temp_min & !is.na(Operating_Mode)) %>%
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
             group_by(Site_ID, temp_int) %>%
-            mutate(Temp_Bin_Time = n()) %>%
+            mutate(Temp_Bin_Tim = n()) %>%
             ungroup() %>%
-            group_by(temp_int, Number_Aux_Legs) %>%
-            summarize(Average_Duration = n()*100/mean(Temp_Bin_Time)) %>%
+            group_by(Site_ID, temp_int, Number_Aux_Legs) %>%
+            summarize(Average_Duration_Defrost = n()*100/mean(Temp_Bin_Tim),
+                      Average_Duration_No_Defrost = sum(Operating_Mode != "Defrost", na.rm=T)*100/mean(Temp_Bin_Tim)) %>%
             filter(!is.na(Number_Aux_Legs)),
           file=paste0(wd, "/Graphs/Graph Data/Aux Staging/", sitename, ".csv"),
           row.names=F)
-AuxStaging <- function(site){
+AuxStagingNoDefrost <- function(site){
   list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     filter(Site_ID==site) %>%
     ggplot(aes(x=temp_int)) +
-    geom_bar(stat="identity", aes(y = Average_Duration, fill = as.character(Number_Aux_Legs))) +
+    geom_bar(stat="identity", aes(y = Average_Duration_No_Defrost, fill = as.character(Number_Aux_Legs))) +
     scale_y_continuous(name = "Percent of Time",
                        limits = c(0,100)) +
     labs(title=paste0("Auxiliary heat use (excluding defrost) by outdoor temperature bin for site ", site),
@@ -1304,25 +1305,60 @@ AuxStaging <- function(site){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# AuxStaging(sitename)
+# AuxStagingNoDefrost(sitename)
 # Print graph to folder in loop for all sites.
-ggsave(paste0(sitename, '_Aux_Use_vs_OAT_Bin.png'),
-       plot = AuxStaging(),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
-       width=12, height=4, units='in')
-
-
-
-
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_Aux_Use_vs_OAT_Bin.png'),
+         plot = AuxStagingNoDefrost(site),
+         path = paste0(wd,'/Graphs/',site, '/'),
+         width=12, height=4, units='in')
+}
+# 5b. Aux staging by OAT bin with defrost
+AuxStagingDefrost <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID==site) %>%
+    ggplot(aes(x=temp_int)) +
+    geom_bar(stat="identity", aes(y = Average_Duration_Defrost, fill = as.character(Number_Aux_Legs))) +
+    scale_y_continuous(name = "Percent of Time",
+                       limits = c(0,100)) +
+    labs(title=paste0("Auxiliary heat use (including defrost) by outdoor temperature bin for site ", site),
+         x="Temperature (F)", fill="Aux Stage") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+}
+# AuxStagingDefrost(sitename)
+# Print graph to folder in loop for all sites.
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_Aux_Use_vs_OAT_Bin_w_Defrost.png'),
+         plot = AuxStagingDefrost(site),
+         path = paste0(wd,'/Graphs/',site, '/'),
+         width=12, height=4, units='in')
+}
 
 # 6. Heating capacity (i.e., heating load) (Btu/h) by OAT bin
-HeatCapacityOATBin <- function(){
-  df %>% 
-    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
-    group_by(temp_int) %>%
-    summarize('Heat Pump' = mean(Heat_Output_Btu_h - Aux_Power*3412, na.rm=T),
-              'Auxiliary Heat' = mean(Aux_Power*3412, na.rm=T)) %>%
+# Save data to file to be able to easily reproduce sites.
+write.csv(df %>% 
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+            filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
+            group_by(Site_ID, temp_int) %>%
+            summarize('Heat Pump' = mean(Heat_Output_Btu_h - Aux_Power*3412, na.rm=T),
+                      'Auxiliary Heat' = mean(Aux_Power*3412, na.rm=T)),
+          file=paste0(wd, "/Graphs/Graph Data/Heating Capacity/", sitename, ".csv"),
+          row.names=F)
+HeatCapacityOATBin <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Heating Capacity/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID==site) %>%
     gather(Heat_Element, Capacity, 'Heat Pump':'Auxiliary Heat') %>%
     ggplot(aes(x = temp_int, y = Capacity, fill = Heat_Element)) + 
     geom_bar(stat="identity", position="stack") +
@@ -1341,12 +1377,15 @@ HeatCapacityOATBin <- function(){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# HeatCapacityOATBin()
-ggsave(paste0(sitename, '_Heat_Capacity_vs_OAT_Bin.png'),
-       plot = HeatCapacityOATBin(),
+# HeatCapacityOATBin(sitename)
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Heating Capacity/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Heating Capacity/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Heating Capacity/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(sitename, '_Heat_Capacity_vs_OAT_Bin.png'),
+       plot = HeatCapacityOATBin(site),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
-
+}
 
 
 
