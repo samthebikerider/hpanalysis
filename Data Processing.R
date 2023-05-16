@@ -111,9 +111,9 @@ sites <- c(
   # "2563EH",
   # "2896BR",
   # "6112OH",
-  # "6950NE",
+  "6950NE",
   # "7083LM",  # Still no data for this site.
-  "8220XE",
+  # "8220XE",
   # "8726VB",
   # "9944LD",
   # "4228VB",
@@ -611,7 +611,7 @@ df <- df %>% mutate(supply_flow_rate_CFM =
 
 
 ## Set sitename to not have to update for each graph:
-sitename = "8220XE"
+sitename = "6950NE"
 
 
 
@@ -1172,6 +1172,7 @@ HeatCycling <- function(){
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           legend.title = element_blank(),
+          axis.text.x = element_text(family = "Times New Roman", angle=-70, hjust=-0.5),
           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
@@ -1181,6 +1182,16 @@ ggsave('Heat_Cycling.png',
        plot = HeatCycling(),
        path = paste0(wd,'/Graphs/Site Comparison/'),
        width=12, height=4, units='in')
+
+
+# Print values for site comparison table
+df %>% group_by(Site_ID) %>% summarize(Defrost_Frequency = round(sum(!is.na(Defrost_Cycle_Runtimes))*3600/n(),2),
+                                       Avg_Defrost_Duration = round(mean(Defrost_Cycle_Runtimes,na.rm=T),1),
+                                       Med_Defrost_Duration = round(median(Defrost_Cycle_Runtimes,na.rm=T),1),
+                                       Defrost_Time_Ratio = round(sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),1),
+                                       HP_Frequency = round(sum(!is.na(HP_Cycle_Runtimes))*3600/n(),2),
+                                       Avg_HP_Duration = round(mean(HP_Cycle_Runtimes,na.rm=T),1),
+                                       Med_HP_Duration = round(median(HP_Cycle_Runtimes,na.rm=T),1))
 
 
 
@@ -1221,12 +1232,7 @@ ggsave(paste0(sitename, '_Defrost_Cycling_vs_OAT_Bin.png'),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
-# Print values for site comparison table
-df %>% group_by(Site_ID) %>% summarize(Defrost_Frequency = round(sum(!is.na(Defrost_Cycle_Runtimes))*3600/n(),2),
-                                       Avg_Defrost_Duration = round(mean(Defrost_Cycle_Runtimes,na.rm=T),1),
-                                       Med_Defrost_Duration = round(median(Defrost_Cycle_Runtimes,na.rm=T),1),
-                                       Defrost_Time_Ratio = round(sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),1))
-
+                                       
 # 4. Defrost mode cycling frequency by RH bin
   # ascale is used to match the two axes--can be adjusted manually.
 DefrostCyclingRH <- function(ascale){
@@ -1267,28 +1273,28 @@ ggsave(paste0(sitename, '_Defrost_Cycling_vs_RH_Bin.png'),
 
 
 
-# 5. Aux power use by OAT bin
+# 5. Aux staging by OAT bin
   # The secondary axis scale is an input to be able to adjust manually.
-AuxPowerOATBin <- function(scale){
-  df %>% filter(OA_TempF <= temp_max & Operating_Mode != "Defrost" & OA_TempF > temp_min) %>%
-    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    group_by(temp_int) %>%
-    mutate(Temp_Bin_Time = n()) %>%
-    # , Avg_Aux_Energy = sum(Aux_Power, na.rm=T)*86400/3600/sum(!is.na(Aux_Power))
-    ungroup() %>%
-    group_by(temp_int, Number_Aux_Legs) %>%
-    summarize(Average_Duration = n()*100/mean(Temp_Bin_Time)) %>%
-              # Avg_Aux_Energy = mean(Avg_Aux_Energy)
-    filter(!is.na(Number_Aux_Legs)) %>%
+write.csv(df %>% 
+            filter(OA_TempF <= temp_max & Operating_Mode != "Defrost" & OA_TempF > temp_min) %>%
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+            group_by(Site_ID, temp_int) %>%
+            mutate(Temp_Bin_Time = n()) %>%
+            ungroup() %>%
+            group_by(temp_int, Number_Aux_Legs) %>%
+            summarize(Average_Duration = n()*100/mean(Temp_Bin_Time)) %>%
+            filter(!is.na(Number_Aux_Legs)),
+          file=paste0(wd, "/Graphs/Graph Data/Aux Staging/", sitename, ".csv"),
+          row.names=F)
+AuxStaging <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID==site) %>%
     ggplot(aes(x=temp_int)) +
     geom_bar(stat="identity", aes(y = Average_Duration, fill = as.character(Number_Aux_Legs))) +
-    # geom_point(aes(y=Avg_Aux_Energy/scale, color="Energy (Right Axis)"), size=5) +
-    # geom_line(aes(y=Avg_Aux_Energy/scale, group=1), size=1) +
-    # scale_color_manual(name="", values = "black") +
     scale_y_continuous(name = "Percent of Time",
-                       # sec.axis = sec_axis(~.*scale, name ="Average Energy Use (kWh/day)"),
                        limits = c(0,100)) +
-    labs(title=paste0("Auxiliary heat use (excluding defrost) by outdoor temperature bin for site ", sitename),
+    labs(title=paste0("Auxiliary heat use (excluding defrost) by outdoor temperature bin for site ", site),
          x="Temperature (F)", fill="Aux Stage") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -1297,12 +1303,11 @@ AuxPowerOATBin <- function(scale){
           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
-    # guides(color=guide_legend(override.aes=list(size=3)))
 }
-# AuxPowerOATBin(1)
-# Print graph to folder--need to manually change scale factor
+# AuxStaging(sitename)
+# Print graph to folder in loop for all sites.
 ggsave(paste0(sitename, '_Aux_Use_vs_OAT_Bin.png'),
-       plot = AuxPowerOATBin(2),
+       plot = AuxStaging(),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
@@ -1536,24 +1541,19 @@ ggsave('Adjusted_COP_vs_OAT_Bin.png',
        width=12, height=4, units='in')
 
 
-# 8. COP vs outdoor air temperature in box and whisker
-  # ylimit is set to COP 5, but may need to be adjusted for different sites.
-COPOATBoxWhisker <- function(site){
+# 8. COP vs outdoor air temperature
+COPOAT <- function(){
   df %>% 
-    filter(OA_TempF < temp_max & OA_TempF > temp_min) %>%
-    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-    group_by(Site_ID, Date, temp_int) %>%
+    group_by(Site_ID, Date, Hour) %>%
     summarize(OA_TempF = median(OA_TempF, na.rm=T),
-              'With Defrost' = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412,
-              'Without Defrost' = sum(Heat_Output_Btu_h[Operating_Mode != "Defrost"], na.rm=T)/sum(Total_Power[Operating_Mode != "Defrost"], na.rm=T)/3412) %>%
-    gather(Mode, Total_COP_Heating, 'With Defrost':'Without Defrost') %>%
-  ggplot(aes(x = temp_int)) + 
-    geom_boxplot(aes(y = Total_COP_Heating, color = Mode), outlier.shape = NA, size=0.9) +
+              Total_COP_Heating = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412,
+              Percent_System_Off = sum(Operating_Mode=="System Off", na.rm=T)/n()) %>%
+    filter(Percent_System_Off < 0.9) %>%
+  ggplot(aes(x = OA_TempF)) + 
+    geom_point(aes(y = Total_COP_Heating), size=0.9) +
     geom_hline(yintercept = 0) +
-    ylim(c(0,5)) +
-    scale_color_manual(values=c("#CC79A7","#009E73","#E69F00")) +
-    labs(title=paste0("COP ranges per OAT bin for site ",site),
-         x="Outdoor Air Temperature Bin (F)",
+    labs(title=paste0("Hourly COP vs outdoor air temperature for site ", sitename),
+         x="Outdoor Air Temperature (F)",
          y="COP") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -1562,10 +1562,10 @@ COPOATBoxWhisker <- function(site){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# COPOATBoxWhisker(sitename)
+# COPOAT()
 # Print graph to folder. Check y scale.
-ggsave(paste0(sitename, '_COP_Ranges_vs_OAT.png'),
-       plot = COPOATBoxWhisker(sitename),
+ggsave(paste0(sitename, '_COP_vs_OAT.png'),
+       plot = COPOAT(),
        path = paste0(wd,'/Graphs/',sitename, '/'),
        width=12, height=4, units='in')
 
