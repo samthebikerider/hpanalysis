@@ -1196,26 +1196,29 @@ df %>% group_by(Site_ID) %>% summarize(Defrost_Frequency = round(sum(!is.na(Defr
 
 
 # 3. Defrost mode cycling frequency by OAT bin
-  # ascale is used to match the two axes--can be adjusted manually.
-DefrostCyclingOAT <- function(ascale){
-  df %>% 
-    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55)),
-           Time_Ratio = NA) %>%
-    filter(OA_TempF <= temp_max & OA_TempF > temp_min & !is.na(Defrost_Cycle_Runtimes)) %>%
-    select(temp_int, Time_Ratio, Defrost_Cycle_Runtimes) %>%
-    rbind(df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
-            group_by(temp_int=cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-            summarize(Time_Ratio = sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),
-                      Defrost_Cycle_Runtimes = NA)) %>%
-    ungroup() %>%
+write.csv(df %>% 
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55)),
+                   Time_Ratio = NA) %>%
+            filter(OA_TempF <= temp_max & OA_TempF > temp_min & !is.na(Defrost_Cycle_Runtimes)) %>%
+            select(Site_ID, temp_int, Time_Ratio, Defrost_Cycle_Runtimes) %>%
+            rbind(df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
+                    group_by(Site_ID, temp_int=cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+                    summarize(Time_Ratio = sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),
+                              Defrost_Cycle_Runtimes = NA)) %>%
+            ungroup(),
+          file=paste0(wd, "/Graphs/Graph Data/Defrost OAT/", sitename, ".csv"),
+          row.names=F)
+DefrostCyclingOAT <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost OAT/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID==site) %>%
     ggplot(aes(x = temp_int)) + 
     geom_boxplot(aes(y = Defrost_Cycle_Runtimes, color="Cycle Duration (Boxplot)"), show.legend = F) +
-    geom_point(aes(y=Time_Ratio*ascale, color="Time Ratio"), size=5) +
-    # geom_line(aes(y=Time_Ratio*ascale, color="Time Ratio", group=1)) +
+    geom_point(aes(y=Time_Ratio, color="Time Ratio"), size=5) +
     scale_color_manual(name="", values=c("black", "#D55E00")) +
     scale_y_continuous(name = "Defrost Cycle Duration (mins)",
-                       sec.axis = sec_axis(~./ascale, name ="Defrost Time Ratio (%)")) +
-    labs(title=paste0("Defrost time ratio and cycle duration per OAT bin for site ",sitename),
+                       sec.axis = sec_axis(~., name ="Defrost Time Ratio (%)")) +
+    labs(title=paste0("Defrost time ratio and cycle duration per OAT bin for site ",site),
          x="Outdoor Air Temperature Bin (F)") +
     theme_bw() +
     guides(color = guide_legend(override.aes = list(shape=c(0,19)))) +
@@ -1225,34 +1228,42 @@ DefrostCyclingOAT <- function(ascale){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# DefrostCyclingOAT(1)
-# Print graph to folder--need to manually change scale factor.
-ggsave(paste0(sitename, '_Defrost_Cycling_vs_OAT_Bin.png'),
-       plot = DefrostCyclingOAT(1),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
+# DefrostCyclingOAT(sitename)
+# Print graph to folder.
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost OAT/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost OAT/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost OAT/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_Defrost_Cycling_vs_OAT_Bin.png'),
+       plot = DefrostCyclingOAT(site),
+       path = paste0(wd,'/Graphs/',site, '/'),
        width=12, height=4, units='in')
+}
 
                                        
 # 4. Defrost mode cycling frequency by RH bin
   # ascale is used to match the two axes--can be adjusted manually.
-DefrostCyclingRH <- function(ascale){
-  df %>% 
-    mutate(hum_int = cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100)),
-           Time_Ratio = NA) %>%
-    filter(!is.na(Defrost_Cycle_Runtimes) & OA_RH > 0 & OA_RH <= 100) %>%
-    select(hum_int, Time_Ratio, Defrost_Cycle_Runtimes) %>%
-    rbind(df %>% filter(OA_RH > 0 & OA_RH <= 100) %>%
-            group_by(hum_int=cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100))) %>%
-            summarize(Time_Ratio = sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),
-                      Defrost_Cycle_Runtimes = NA)) %>%
-    ungroup() %>%
+write.csv(df %>% 
+            mutate(hum_int = cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100)),
+                   Time_Ratio = NA) %>%
+            filter(!is.na(Defrost_Cycle_Runtimes) & OA_RH > 0 & OA_RH <= 100) %>%
+            select(Site_ID, hum_int, Time_Ratio, Defrost_Cycle_Runtimes) %>%
+            rbind(df %>% filter(OA_RH > 0 & OA_RH <= 100) %>%
+                    group_by(Site_ID, hum_int=cut(OA_RH,breaks=c(0,10,20,30,40,50,60,70,80,90,100))) %>%
+                    summarize(Time_Ratio = sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),
+                              Defrost_Cycle_Runtimes = NA)) %>%
+            ungroup(),
+          file=paste0(wd, "/Graphs/Graph Data/Defrost RH/", sitename, ".csv"),
+          row.names=F)
+DefrostCyclingRH <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost RH/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID==site) %>%
     ggplot(aes(x = hum_int)) + 
     geom_boxplot(aes(y = Defrost_Cycle_Runtimes, color="Cycle Duration (Boxplot)"), show.legend = F) +
-    geom_point(aes(y=Time_Ratio*ascale, color="Time Ratio"), size=5) +
-    # geom_line(aes(y=Time_Ratio*ascale, color="Time Ratio", group=1)) +
+    geom_point(aes(y=Time_Ratio*2, color="Time Ratio"), size=5) +
     scale_color_manual(name="", values=c("black", "#D55E00")) +
     scale_y_continuous(name = "Defrost Cycle Duration (mins)",
-                       sec.axis = sec_axis(~./ascale, name ="Defrost Time Ratio (%)")) +
+                       sec.axis = sec_axis(~./2, name ="Defrost Time Ratio (%)")) +
     labs(title=paste0("Defrost time ratio and cycle duration per RH bin for site ",sitename),
          x="Outdoor Relative Humidity Bin (%)") +
     theme_bw() +
@@ -1263,13 +1274,16 @@ DefrostCyclingRH <- function(ascale){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# DefrostCyclingRH(2)
-# Print graph to folder--need to manually change scale factor.
-ggsave(paste0(sitename, '_Defrost_Cycling_vs_RH_Bin.png'),
-       plot = DefrostCyclingRH(2),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
+# DefrostCyclingRH(sitename)
+# Print graph to folder.
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost RH/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost RH/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost RH/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_Defrost_Cycling_vs_RH_Bin.png'),
+       plot = DefrostCyclingRH(site),
+       path = paste0(wd,'/Graphs/',site, '/'),
        width=12, height=4, units='in')
-
+}
 
 
 
@@ -1581,17 +1595,22 @@ ggsave('Adjusted_COP_vs_OAT_Bin.png',
 
 
 # 8. COP vs outdoor air temperature
-COPOAT <- function(){
-  df %>% 
-    group_by(Site_ID, Date, Hour) %>%
-    summarize(OA_TempF = median(OA_TempF, na.rm=T),
-              Total_COP_Heating = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412,
-              Percent_System_Off = sum(Operating_Mode=="System Off", na.rm=T)/n()) %>%
-    filter(Percent_System_Off < 0.9) %>%
+write.csv(df %>% 
+            group_by(Site_ID, Date, Hour) %>%
+            summarize(OA_TempF = median(OA_TempF, na.rm=T),
+                      Total_COP_Heating = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412,
+                      Percent_System_Off = sum(Operating_Mode=="System Off", na.rm=T)/n()) %>%
+            filter(Percent_System_Off < 0.9),
+          file=paste0(wd, "/Graphs/Graph Data/COP/", sitename, ".csv"),
+          row.names=F)
+COPOAT <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/COP/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID==site) %>%
   ggplot(aes(x = OA_TempF)) + 
     geom_point(aes(y = Total_COP_Heating), size=0.9) +
     geom_hline(yintercept = 0) +
-    labs(title=paste0("Hourly COP vs outdoor air temperature for site ", sitename),
+    labs(title=paste0("Hourly COP vs outdoor air temperature for site ", site),
          x="Outdoor Air Temperature (F)",
          y="COP") +
     theme_bw() +
@@ -1601,13 +1620,16 @@ COPOAT <- function(){
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
 }
-# COPOAT()
+# COPOAT(sitename)
 # Print graph to folder. Check y scale.
-ggsave(paste0(sitename, '_COP_vs_OAT.png'),
-       plot = COPOAT(),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/COP/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/COP/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/COP/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_COP_vs_OAT.png'),
+       plot = COPOAT(site),
+       path = paste0(wd,'/Graphs/',site, '/'),
        width=12, height=4, units='in')
-
+}
 
 
 
