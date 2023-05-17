@@ -1351,21 +1351,21 @@ write.csv(df %>%
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
             filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
             group_by(Site_ID, temp_int) %>%
-            summarize('Heat Pump' = mean(Heat_Output_Btu_h - Aux_Power*3412, na.rm=T),
-                      'Auxiliary Heat' = mean(Aux_Power*3412, na.rm=T)),
+            summarize(HP_Capacity = mean(Heat_Output_Btu_h - Aux_Power*3412, na.rm=T),
+                      Aux_Capacity = mean(Aux_Power*3412, na.rm=T)),
           file=paste0(wd, "/Graphs/Graph Data/Heating Capacity/", sitename, ".csv"),
           row.names=F)
 HeatCapacityOATBin <- function(site){
   list.files(path = paste0(wd, "/Graphs/Graph Data/Heating Capacity/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     filter(Site_ID==site) %>%
-    gather(Heat_Element, Capacity, 'Heat Pump':'Auxiliary Heat') %>%
+    mutate(temp_int = factor(temp_int, levels=temp_int)) %>%
+    gather(Heat_Element, Capacity, HP_Capacity:Aux_Capacity) %>%
     ggplot(aes(x = temp_int, y = Capacity, fill = Heat_Element)) + 
     geom_bar(stat="identity", position="stack") +
-    # geom_line(aes(y = Capacity_HP, color = "HP ODU Heat", group=1), size = 1) +
-    # geom_line(aes(y = Capacity_Aux, color = "Auxiliary Heat", group=2), size = 1) +
-    # geom_line(aes(y = Capacity_Total, color = "System Total", group=4), size = 1) +
-    # scale_color_manual(values=c("#CC79A7","#009E73","black","#E69F00")) +
+    scale_fill_manual(limits = c("HP_Capacity", "Aux_Capacity"),
+                      labels=c("Heat Pump", "Auxiliary Heat"),
+                      values=c("#00BFC4", "#F8766D")) +
     labs(title=paste0("Delivered heat capacity per OAT bin for site ",sitename),
          x="Outdoor Air Temperature Bin (F)",
          y="Delivered Heating Capacity (Btu/hr)",
