@@ -368,9 +368,10 @@ df <- df %>% mutate(
           ifelse(Site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB") & Operating_Mode=="Defrost" & Aux_Power < 0.1 & OA_TempF > 60,
                  "Cooling", Operating_Mode))
 
-## Remove dates with operational issues or critical data missing for reporting.
-  # Only run this if making COP/capacity graphs.
-  # Note: confusing syntax--filter is what we are keeping, so needs to be opposite of what removing.
+## Remove data before data stabilizes for each site.
+  # If there are key parameters missing during any timeframes, set all key parameters to NA
+  # so that heating capacity, COP, and other calculated variables are based on the same data.
+  # Do not run this part for daily operation graphs, we want to see the original data for that.
 df <- df %>% 
   # Site 2458CE:
     # Manufacturer visited site and Mar 21, 2023 8:30am - 5pm
@@ -411,16 +412,19 @@ df <- df %>%
   # Site 8726VB:
     # Data doesn't stabilize until Feb 11.
   filter(Site_ID != "8726VB" | Timestamp >= strptime("2023-02-12", "%F", tz="US/Eastern")) %>%
-    # No OA Temp and issues with SAT Mar 09 11AM to Mar 10 12PM
-  filter(Site_ID != "8726VB" | Timestamp > strptime("2023-03-09 11:00:00", "%F %T", tz="US/Eastern") | Timestamp < strptime("2023-03-10 12:00:00", "%F %T", tz="US/Eastern")) %>%
+    # No OA Temp and issues with SAT Mar 09 11AM to Mar 10 12PM. Set key parameters to NA.
+  mutate_at(vars(HP_Power, Aux_Power, Fan_Power, OA_TempF, SA_TempF),
+            ~ ifelse(Site_ID == "8726VB" & Timestamp > strptime("2023-03-09 11:00:00", "%F %T", tz="US/Eastern") & Timestamp < strptime("2023-03-10 12:00:00", "%F %T", tz="US/Eastern"), NA, .)) %>%
   
   # Site 9944LD:
     # Data doesn't stabilize until Jan 7th, use this day as starting point.
   filter(Site_ID != "9944LD" | Timestamp >= strptime("2023-01-07", "%F", tz="US/Mountain")) %>%
     # NA Fan power and temperature data from Jan 14 - 16 due to eGauge offline.
-  filter(Site_ID != "9944LD" | Timestamp > strptime("2023-01-14 16:00:00", "%F %T", tz="US/Mountain") | Timestamp < strptime("2023-01-16 20:00:00", "%F %T", tz="US/Mountain")) %>%
+  mutate_at(vars(HP_Power, Aux_Power, Fan_Power, OA_TempF, SA_TempF),
+            ~ ifelse(Site_ID != "9944LD" & Timestamp > strptime("2023-01-14 16:00:00", "%F %T", tz="US/Mountain") & Timestamp < strptime("2023-01-16 20:00:00", "%F %T", tz="US/Mountain"), NA, .)) %>%
     # Missing temp data and HP Power and Aux default to 0 kW from Feb 15 noon to Feb 16 noon
-  filter(Site_ID != "9944LD" | Timestamp > strptime("2023-02-15 12:00:00", "%F %T", tz="US/Mountain") | Timestamp < strptime("2023-02-16 12:00:00", "%F %T", tz="US/Mountain"))
+  mutate_at(vars(HP_Power, Aux_Power, Fan_Power, OA_TempF, SA_TempF),
+            ~ ifelse(Site_ID != "9944LD" & Timestamp > strptime("2023-02-15 12:00:00", "%F %T", tz="US/Mountain") & Timestamp < strptime("2023-02-16 12:00:00", "%F %T", tz="US/Mountain"), NA, .))
 
 
 
@@ -1476,7 +1480,7 @@ Heat_COP_HP_all_sites <- function(manufacturers, spec1, spec2){
     geom_hline(yintercept=spec2, linetype="dashed") +
     geom_vline(xintercept=5) +
     geom_hline(yintercept=0) +
-    labs(title="Demonstrated heat pump compressor COP (excluding defrost) vs. outdoor air temperature",
+    labs(title="Demonstrated heat pump COP (excluding defrost) vs. outdoor air temperature",
          x="Outdoor Temperature (F)",
          y="COP",
          color="Manufacturer-Site ID") +
@@ -1528,7 +1532,7 @@ Heat_COP_HP_all_sites_defrost <- function(manufacturers, spec1, spec2){
     geom_vline(xintercept=5) +
     geom_hline(yintercept=0) +
     scale_linetype_manual(values=c("dashed", "dotted"), name="") +
-    labs(title="Demonstrated heat pump compressor COP (including defrost) vs. outdoor air temperature",
+    labs(title="Demonstrated heat pump COP (including defrost) vs. outdoor air temperature",
          x="Outdoor Temperature (F)",
          y="COP",
          color="Manufacturer-Site ID") +
@@ -1599,7 +1603,15 @@ write.csv(df %>%
             group_by(Site_ID, Date, Hour) %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
                       Total_COP_Heating = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412,
-                      Percent_System_Off = sum(Operating_Mode=="System Off", na.rm=T)/n()) %>%
+                      Percent_System_Off = sum(Operating_Mode=="System Off", na.rm=T)/n(),
+                      Percent_Defrost = sum(Operating_Mode=="Defrost", na.rm=T)/n(),
+                      Percent_HP = sum(Operating_Mode=="Heating-HP Only", na.rm=T)/n(),
+                      Percent_HP_Aux = sum(Operating_Mode=="Heating-Aux/HP", na.rm=T)/n(),
+                      Percent_Aux = sum(Operating_Mode=="Heating-Aux Only", na.rm=T)/n(),
+                      Dominant_Mode = ifelse(Percent_Defrost > 0.2, "Defrost", 
+                                             # >= Percent_HP & Percent_Defrost >= Percent_Aux & Percent_Defrost >= Percent_HP_Aux, "Defrost", 
+                                             ifelse(Percent_HP >= Percent_Aux & Percent_HP >= Percent_HP_Aux, "Heat Pump",
+                                                    ifelse(Percent_HP_Aux >= Percent_Aux, "Heat Pump + Aux Heat", "Aux Heat")))) %>%
             filter(Percent_System_Off < 0.9),
           file=paste0(wd, "/Graphs/Graph Data/COP/", sitename, ".csv"),
           row.names=F)
@@ -1608,17 +1620,18 @@ COPOAT <- function(site){
     map_df(~read.csv(.)) %>%
     filter(Site_ID==site) %>%
   ggplot(aes(x = OA_TempF)) + 
-    geom_point(aes(y = Total_COP_Heating), size=0.9) +
+    geom_point(aes(y = Total_COP_Heating, color=Dominant_Mode), size=0.8) +
     geom_hline(yintercept = 0) +
     labs(title=paste0("Hourly COP vs outdoor air temperature for site ", site),
          x="Outdoor Air Temperature (F)",
-         y="COP") +
+         y="COP",
+         color="Dominant Mode") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
-          legend.title = element_blank(),
           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
+    guides(color=guide_legend(override.aes=list(size=3)))
 }
 # COPOAT(sitename)
 # Print graph to folder. Check y scale.
