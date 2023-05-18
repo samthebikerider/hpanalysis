@@ -1607,18 +1607,17 @@ write.csv(df %>%
                       Percent_Defrost = sum(Operating_Mode=="Defrost", na.rm=T)/n(),
                       Percent_HP = sum(Operating_Mode=="Heating-HP Only", na.rm=T)/n(),
                       Percent_HP_Aux = sum(Operating_Mode=="Heating-Aux/HP", na.rm=T)/n(),
-                      Percent_Aux = sum(Operating_Mode=="Heating-Aux Only", na.rm=T)/n(),
-                      Dominant_Mode = ifelse(Percent_Defrost > 0.2, "Defrost", 
-                                             # >= Percent_HP & Percent_Defrost >= Percent_Aux & Percent_Defrost >= Percent_HP_Aux, "Defrost", 
-                                             ifelse(Percent_HP >= Percent_Aux & Percent_HP >= Percent_HP_Aux, "Heat Pump",
-                                                    ifelse(Percent_HP_Aux >= Percent_Aux, "Heat Pump + Aux Heat", "Aux Heat")))) %>%
-            filter(Percent_System_Off < 0.9),
+                      Percent_Aux = sum(Operating_Mode=="Heating-Aux Only", na.rm=T)/n()),
           file=paste0(wd, "/Graphs/Graph Data/COP/", sitename, ".csv"),
           row.names=F)
 COPOAT <- function(site){
   list.files(path = paste0(wd, "/Graphs/Graph Data/COP/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     filter(Site_ID==site) %>%
+    filter(Percent_System_Off < 0.9) %>%
+    mutate(Dominant_Mode = ifelse(Percent_Defrost > 0.1, "Defrost", 
+                                  ifelse(Percent_HP >= Percent_Aux & Percent_HP >= Percent_HP_Aux, "Heat Pump",
+                                         ifelse(Percent_HP_Aux >= Percent_Aux, "Heat Pump + Aux Heat", "Aux Heat")))) %>%
   ggplot(aes(x = OA_TempF)) + 
     geom_point(aes(y = Total_COP_Heating, color=Dominant_Mode), size=0.8) +
     geom_hline(yintercept = 0) +
