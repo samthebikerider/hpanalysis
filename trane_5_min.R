@@ -55,10 +55,10 @@ site_4228VB <- bind_rows(`4228VB_2022.12.19_Week51_minute.csv`, `4228VB_2022.12.
                          `4228VB_2023.01.16_Week03_minute.csv`, `4228VB_2023.01.23_Week04_minute.csv`,
                          `4228VB_2023.01.30_Week05_minute.csv`, `4228VB_2023.02.06_Week06_minute.csv`,
                          `4228VB_2023.02.13_Week07_minute.csv`, `4228VB_2023.02.20_Week08_minute.csv`,
-                         `4228VB_2023.02.27_Week09_minute.csv`, `4228VB_2023.03.06_Week10_minute.csv`)
-#site 2 - 5539NO
-site_5539NO <- bind_rows(`5539NO_2023.02.13_Week07_minute.csv`, `5539NO_2023.02.20_Week08_minute.csv`,
-                         `5539NO_2023.02.27_Week09_minute.csv`, `5539NO_2023.03.06_Week10_minute.csv`) 
+                         `4228VB_2023.02.27_Week09_minute.csv`, `4228VB_2023.03.06_Week10_minute.csv`,
+                         `4228VB_2023.03.13_Week11_minute.csv`, `4228VB_2023.03.20_Week12_minute.csv`,
+                         `4228VB_2023.03.27_Week13_minute.csv`, `4228VB_2023.04.03_Week14_minute.csv`,
+                         `4228VB_2023.04.10_Week15_minute.csv`)
 
 
 # function to aggregate dfs
@@ -101,14 +101,17 @@ agg_dfs <- function(df, site, tz){
               "reversing_valve_signal_V" = ifelse("reversing_valve_signal_V" %in% column_names == TRUE, mean(`reversing_valve_signal_V`, na.rm = T), NA),
               "seconds_non_zero_in_5min_period" = sum(`seconds`))
   df_agg <- as.data.frame(df_agg)
-  #df_agg$HP_system_pwr_kW <- sum(df_agg$ODU_pwr_kW, df_agg$fan_pwr_kW, df_agg$AHU_pwr_kW, df_agg$auxheat_pwr_kW, na.rm = T)
-  df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
+  df_agg <- df_agg %>%
+    mutate(HP_system_pwr_kW = select(., ODU_pwr_kW:auxheat_pwr_kW) %>% rowSums(na.rm = T))
   df_agg$local_datetime <- format(df_agg$datetime_UTC, tz = tz, usetz = T)
   df_agg <- df_agg %>% relocate(datetime_UTC)
   df_agg <- df_agg %>% relocate(local_datetime)
-  # return(df_agg)
+  df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
   write.csv(df_agg, str_glue('{site}_aggregated_5_min.csv'), row.names = FALSE)
+  
 }
 
 agg_dfs(site_4228VB, "4228VB", "US/Mountain")
+
+
 

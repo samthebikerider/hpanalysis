@@ -2,12 +2,12 @@
 # Author: Samuel Rosenberg
 # Company: Pacific Northwest National Laboratory
 # Created on: 2023-02-01
-# Description: 
+# Description:
 #####################################################
 # Todo:
-# 
-# 
-# 
+#
+#
+#
 #####################################################
 ############ data import and processing #############
 #####################################################
@@ -19,105 +19,150 @@ library(tidyverse)
 library(zoo)
 library(xts)
 library(stringr)
+library(data.table)
+library(openair)
 
-# set wd, read data
-path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/Raw Data/Michaels"
-setwd(path)
-
+#####################################################
+################### Functions #######################
+#####################################################
 # read csv function that adds home ID column
 read_csv_homeID <- function(filename){
   df <- read.csv(filename)
   df[-1] <- lapply(df[-1], as.numeric)
   df$HomeID <- substr(filename, 14, 19)
   df <- df %>% relocate(HomeID)
-  # df$index <- as.POSIXlt(df$index, format = "%Y-%m-%d %H:%M:%S%")
-  df$seconds <- 1
   df <- df %>%
-    mutate(Aux_Power = rowSums(across(c(Aux1_Power, Aux2_Power, Aux3_Power, Aux4_Power)), na.rm = T))
+    rowwise() %>% 
+    mutate(Aux_Power = sum(c_across(colnames(df)[colnames(df) %in% c("Aux1_Power", "Aux2_Power", "Aux3_Power", "Aux4_Power")]), na.rm = T)) # sum for aux power
   df
 }
 
-##read all files in folder, result is separate dataframe for each .csv
-temp = list.files(pattern="\\.csv$")
-for (i in 1:length(temp)) assign(temp[i], read_csv_homeID(temp[i]))
-
-# bind rows for each site
-site_6950NE <- bind_rows(`PNNL_ccASHP__6950NE_2022-12-19.csv`, `PNNL_ccASHP__6950NE_2023-01-03.csv`,
-                         `PNNL_ccASHP__6950NE_2023-01-09.csv`, `PNNL_ccASHP__6950NE_2023-01-16.csv`,
-                         `PNNL_ccASHP__6950NE_2023-01-23.csv`, `PNNL_ccASHP__6950NE_2023-02-01.csv`,
-                         `PNNL_ccASHP__6950NE_2023-02-07.csv`, `PNNL_ccASHP__6950NE_2023-02-14.csv`)
-
-site_8820XE <- bind_rows(`PNNL_ccASHP__8220XE_2022-12-19.csv`, `PNNL_ccASHP__8220XE_2023-01-03.csv`,
-                         `PNNL_ccASHP__8220XE_2023-01-09.csv`, `PNNL_ccASHP__8220XE_2023-01-16.csv`,
-                         `PNNL_ccASHP__8220XE_2023-01-23.csv`, `PNNL_ccASHP__8220XE_2023-02-01.csv`,
-                         `PNNL_ccASHP__8220XE_2023-02-07.csv`, `PNNL_ccASHP__8220XE_2023-02-14.csv`)
-
-site_9944LD <- bind_rows(`PNNL_ccASHP__9944LD_2023-01-09.csv`, `PNNL_ccASHP__9944LD_2023-01-16.csv`,
-                         `PNNL_ccASHP__9944LD_2023-01-23.csv`, `PNNL_ccASHP__9944LD_2023-02-01.csv`,
-                         `PNNL_ccASHP__9944LD_2023-02-07.csv`, `PNNL_ccASHP__9944LD_2023-02-14.csv`)
-
-site_2563EH <- bind_rows(`PNNL_ccASHP__2563EH_2023-02-01.csv`, `PNNL_ccASHP__2563EH_2023-02-07.csv`,
-                         `PNNL_ccASHP__2563EH_2023-02-14.csv`)
-
-site_2896BR <- bind_rows(`PNNL_ccASHP__2896BR_2023-02-01.csv`, `PNNL_ccASHP__2896BR_2023-02-07.csv`,
-                         `PNNL_ccASHP__2896BR_2023-02-14.csv`)
-
-site_6112OH <- bind_rows(`PNNL_ccASHP__6112OH_2023-02-14.csv`)
-
-site_8726VB <- bind_rows(`PNNL_ccASHP__8726VB_2023-02-14.csv`)
-
-# function to aggregate dfs
-agg_dfs <- function(df, site, tz){
-  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data"
+# function to read csvs that are new and append list of csv's to reflect processing
+grab_data <- function(pattern){
+  # load aggd_files.csv
+  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data/"
   setwd(path)
-  column_names <- colnames(df)
-  df_agg <- df %>%
-    group_by("date_UTC" = as.Date(`index`), "hour_of_day_UTC" = as.POSIXlt(`index`)$hour) %>%
-    summarise("HP_pwr_kW" = ifelse("HP_Power" %in% column_names == T, mean(`HP_Power`, na.rm = T), NA),
-               "fan_pwr_kW" = ifelse("Fan_Power" %in% column_names == T, mean(`Fan_Power`, na.rm = T), NA),
-               "AHU_pwr_kW" = ifelse("AHU_Power" %in% column_names == T, mean(`AHU_Power`, na.rm = T), NA),
-               "auxheat_pwr_kW" = ifelse("Aux_Power" %in% column_names == T, mean(`Aux_Power`, na.rm = T), NA),
-               "OA_temp_F" = ifelse("OA_TempF" %in% column_names == T, mean(`OA_TempF`, na.rm = T), NA),
-               "OA_RH" = ifelse("OA_RH" %in% column_names == T, mean(`OA_RH`, na.rm = T), NA),
-               "SA_temp_blower_cabinet_F" = ifelse("SA_temp_blower_cabinet_F" %in% column_names == T, mean(`SA_temp_blower_cabinet_F`, na.rm = T), NA),
-               "SA_RH_blower_cabinet" = ifelse("SA_RH_blower_cabinet" %in% column_names == T, mean(`SA_RH_blower_cabinet`, na.rm = T), NA),
-               "SA_temp_duct1_F" = ifelse("SA1_TempF" %in% column_names == T, mean(`SA1_TempF`, na.rm = T), NA),
-               "SA_RH_duct1" = ifelse("SA1_RH" %in% column_names == T, mean(`SA1_RH`, na.rm = T), NA),
-               "SA_temp_duct2_F" = ifelse("SA2_TempF" %in% column_names == T, mean(`SA2_TempF`, na.rm = T), NA),
-               "SA_RH_duct2" = ifelse("SA2_RH" %in% column_names == T, mean(`SA2_RH`, na.rm = T), NA),
-               "SA_temp_duct3_F" = ifelse("SA3_TempF" %in% column_names == T, mean(`SA3_TempF`, na.rm = T), NA),
-               "SA_RH_duct3" = ifelse("SA3_RH" %in% column_names == T, mean(`SA3_RH`, na.rm = T), NA),
-               "SA_temp_duct4_F" = ifelse("SA4_TempF" %in% column_names == T, mean(`SA4_TempF`, na.rm = T), NA),
-               "SA_RH_duct4" = ifelse("SA4_RH" %in% column_names == T, mean(`SA4_RH`, na.rm = T), NA),
-               "RA_temp_F" = ifelse("RA_TempF" %in% column_names == T, mean(`RA_TempF`, na.rm = T), NA),
-               "RA_RH" = ifelse("RA_RH" %in% column_names == T, mean(`RA_RH`, na.rm = T), NA),
-               "AHU_ambient_temp_F" = ifelse("AHU_TempF" %in% column_names == T, mean(`AHU_TempF`, na.rm = T), NA),
-               "AHU_ambient_RH" = ifelse("AHU_RH" %in% column_names == T, mean(`AHU_RH`, na.rm = T), NA),
-               "room1_temp_F" = ifelse("Room1_TempF" %in% column_names == T, mean(`Room1_TempF`, na.rm = T), NA),
-               "room1_RH" = ifelse("Room1_RH" %in% column_names == T, mean(`Room1_RH`, na.rm = T), NA),
-               "room2_temp_F" = ifelse("Room2_TempF" %in% column_names == T, mean(`Room2_TempF`, na.rm = T), NA),
-               "room2_RH" = ifelse("Room2_RH" %in% column_names == T, mean(`Room2_RH`, na.rm = T), NA),
-               "room3_temp_F" = ifelse("Room3_TempF" %in% column_names == T, mean(`Room3_TempF`, na.rm = T), NA),
-               "room3_RH" = ifelse("Room3_RH" %in% column_names == T, mean(`Room3_RH`, na.rm = T), NA),
-               "room4_temp_F" = ifelse("Room4_TempF" %in% column_names == T, mean(`Room4_TempF`, na.rm = T), NA), 
-               "room4_RH" = ifelse("Room4_RH" %in% column_names == T, mean(`Room4_RH`, na.rm = T), NA),
-               "reversing_valve_signal_V" = ifelse("RV_Volts" %in% column_names == T, mean(`RV_Volts`, na.rm = T), NA),
-               "seconds_non_zero_in_hour" = sum(`seconds`))
-  df_agg <- as.data.frame(df_agg)
-  df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2)))
-  df_agg$datetime_UTC <- paste(df_agg$date_UTC, df_agg$hour_of_day_UTC)
-  df_agg$datetime_UTC <- as.POSIXct(df_agg$datetime_UTC, format = "%Y-%m-%d %H", tz = "UTC")
-  df_agg$local_datetime <- format(df_agg$datetime_UTC, tz = tz, usetz = T)
-  df_agg <- df_agg %>% relocate(datetime_UTC)
-  df_agg <- df_agg %>% relocate(local_datetime)
-  df_agg <- subset(df_agg, select=-c(date_UTC, hour_of_day_UTC))
-  # return(df_agg)
-  write.csv(df_agg, str_glue('{site}_aggregated_hourly.csv'), row.names = FALSE)
+  aggd_files <- read.csv("aggd_files.csv")
+  
+  # load files not already agg'd
+  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/Raw Data/Michaels"
+  setwd(path)
+  temp <- list.files(pattern=pattern)
+  temp_list <- as.list(temp)
+  temp_list <- temp_list[!(temp_list %in% aggd_files$aggd_files)]
+  temp <- unlist(temp_list, use.names = F)
+  df <- temp %>% map_df(~read_csv_homeID(.))
+  return(df)
+
+  # append list to column and date to column
+  # add newly aggregated data to list of already aggregated data
+  aggd_files_out <- data.frame(matrix(nrow=length(temp_list), ncol = 2))
+  colnames(aggd_files_out) <- c("aggd_files", "date")
+  aggd_files_out$aggd_files <- temp
+  aggd_files_out$date <- Sys.Date()
+  aggd_files_out <- rbind(aggd_files, aggd_files_out)
+  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data/"
+  setwd(path)
+  write.csv(aggd_files_out, "aggd_files.csv", row.names = FALSE)
 }
 
-agg_dfs(site_6950NE, "6950NE", "US/Central")
-agg_dfs(site_8820XE, "8820XE", "US/Central")
-agg_dfs(site_9944LD, "9944LD", "US/Mountain")
-agg_dfs(site_2563EH, "2563EH", "US/Eastern")
-agg_dfs(site_2896BR, "2896BR", "US/Eastern")
+# function to aggregate dfs
+agg_dfs <- function(df, tz){
+  df$date <- as.POSIXct(df$index, format = "%Y-%m-%d %H:%M:%S", tz = "UTC") # format and name date column for timeAverage
+  to_keep <- c("HomeID", "date", "HP_Power", "Fan_Power", "AHU_Power", "Aux_Power",
+               "OA_TempF", "OA_RH", "SA_temp_blower_cabinet_F", "SA_RH_blower_cabinet",
+               "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",
+               "SA4_TempF", "SA4_RH", "RA_TempF", "RA_RH", "AHU_TempF", "AHU_RH",
+               "Room1_TempF", "Room1_RH","Room2_TempF", "Room2_RH", "Room3_TempF",
+               "Room3_RH", "Room4_TempF", "Room4_RH", "RV_Volts") # list of cols used in agg
+  df2 <- subset(df, select = names(df) %in% to_keep) # keep only cols  used in agg
+  df_agg <- timeAverage(df2, avg.time = "hour", data.thresh = 75, statistic = "mean") # agg hourly
+  cols_renamed <- c(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
+                    AHU_pwr_kW = "AHU_Power", auxheat_pwr_kW = "Aux_Power",
+                    OA_temp_F = "OA_TempF", 
+                    SA_temp_duct1_F = "SA1_TempF", SA_RH_duct1 = "SA1_RH",
+                    SA_temp_duct2_F = "SA2_TempF", SA_RH_duct2 = "SA2_RH",
+                    SA_temp_duct3_F = "SA3_TempF", SA_RH_duct3 = "SA3_RH",
+                    SA_temp_duct4_F = "SA4_TempF", SA_RH_duct4 = "SA4_RH",
+                    RA_temp_F = "RA_TempF",
+                    AHU_ambient_temp_F = "AHU_TempF", AHU_ambient_RH = "AHU_RH",
+                    room1_temp_F = "Room1_TempF", room1_RH = "Room1_RH",
+                    room2_temp_F = "Room2_TempF", room2_RH = "Room2_RH",
+                    room3_temp_F = "Room3_TempF", room3_RH = "Room3_RH",
+                    room4_temp_F = "Room4_TempF", room4_RH = "Room4_RH",
+                    reversing_valve_signal_V = "RV_Volts",
+                    datetime_UTC = "date") # list current and new colnames
+  df_agg <- df_agg %>%
+    rename(any_of(cols_renamed)) # rename cols using list
+  df_agg <- df_agg %>%
+    rowwise() %>% 
+    mutate(HP_system_pwr_kW = sum(c_across(colnames(df_agg)[colnames(df_agg) %in% c("ODU_pwr_kW", "fan_pwr_kW", "AHU_pwr_kW", "auxheat_pwr_kW")]), na.rm = T)) # sum for total system power
+  df_agg <- df_agg %>% mutate(across(where(is.numeric), ~ round(., 2))) # as.numeric and round
+  df_agg$local_datetime <- format(df_agg$datetime_UTC, tz = tz, usetz = T) # add, convert, format local date col
+  return(df_agg)
+}
 
+# function to merge aggregated df with existing df
+merge_aggd_dfs <- function(df, site, tz){
+  df_cols <- c("site_id", "unit_id", "local_datetime", "datetime_UTC", "ODU_pwr_kW", "fan_pwr_kW",
+               "AHU_pwr_kW",	"auxheat_pwr_kW",	"OA_temp_F",	"OA_RH",	"SA_temp_blower_cabinet_F",
+               "SA_RH_blower_cabinet",	"SA_temp_duct1_F",	"SA_RH_duct1",	"SA_temp_duct2_F",
+               "SA_RH_duct2","SA_temp_duct3_F", "SA_RH_duct3", "SA_temp_duct4_F", "SA_RH_duct4",
+               "RA_temp_F",	"RA_RH",	"AHU_ambient_temp_F",	"AHU_ambient_RH",
+               "room1_temp_F",	"room1_RH",	"room2_temp_F",	"room2_RH",	"room3_temp_F",	"room3_RH",
+               "room4_temp_F",	"room4_RH",	"HP_system_pwr_kW",	"reversing_valve_signal_V")
+  setwd("/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data/new/")
+  name_file <- str_glue('{site}_aggregated_hourly.csv')
+  df_out <- agg_dfs(df, tz)
+  missing_cols <- setdiff(df_cols, names(df_out))
+  df_out[missing_cols] <- NA
+  df_out <- df_out[df_cols]
+  # df_temp <- read.csv(name_file)
+  # df_temp$datetime_UTC <- as.POSIXct(df_temp$datetime_UTC, format = "%Y-%m-%d %H", tz = "UTC")
+  # df_out <- rbind(df_temp, df_agg)
+  df_out <- df_out[!duplicated(df_out), ]
+  df_out$site_id <- site
+  df_out$unit_id <- site
+  df_out <- df_out %>%
+    select(any_of(df_cols))
+  write.csv(df_out, name_file, row.names = FALSE)
+  #return(df_out)
+}
+
+#####################################################
+###################### Work #########################
+#####################################################
+
+# agg each site
+site_6950NE <- grab_data("PNNL_ccASHP__6950NE")
+merge_aggd_dfs(site_6950NE, "6950NE", "US/Central")
+rm(site_6950NE)
+
+site_8220XE <- grab_data("PNNL_ccASHP__8220XE")
+merge_aggd_dfs(site_8220XE, "8220XE", "US/Central")
+rm(site_8220XE)
+
+
+site_9944LD <- grab_data("PNNL_ccASHP__9944LD")
+merge_aggd_dfs(site_9944LD, "9944LD", "US/Mountain")
+rm(site_9944LD)
+
+
+site_2563EH <- grab_data("PNNL_ccASHP__2563EH")
+merge_aggd_dfs(site_2563EH, "2563EH", "US/Eastern")
+rm(site_2563EH)
+
+
+site_2896BR <- grab_data("PNNL_ccASHP__2896BR")
+merge_aggd_dfs(site_2896BR, "2896BR", "US/Eastern")
+rm(site_2896BR)
+
+
+site_6112OH <- grab_data("PNNL_ccASHP__6112OH")
+merge_aggd_dfs(site_6112OH, "6112OH", "US/Eastern")
+rm(site_6112OH)
+
+
+site_8726VB <- grab_data("PNNL_ccASHP__8726VB")
+merge_aggd_dfs(site_8726VB, "8726VB", "US/Eastern")
+rm(site_8726VB)
