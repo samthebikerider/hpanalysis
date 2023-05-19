@@ -111,15 +111,15 @@ sites <- c(
   # "2563EH",
   # "2896BR",
   # "6112OH",
-  "6950NE",
+  # "6950NE",
   # "7083LM",  # Still no data for this site.
   # "8220XE",
   # "8726VB",
   # "9944LD",
   # "4228VB",
   # "5539NO",
-  # "5291QJ",
-  # "2458CE",
+  "5291QJ",
+  "2458CE",
   "")
 timeframe <- c(strptime("12/10/2022", format="%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==sites[1]]), 
                strptime("4/01/2023", format="%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==sites[1]]))
@@ -437,7 +437,6 @@ df <- df %>%
 df <- df %>% mutate(
   Operational_Issue = ifelse(
     (Site_ID == "5539NO" & Timestamp >= strptime("2023-04-03", "%F", tz="US/Central")) |
-     (Site_ID == "6950NE" & Timestamp > strptime("2022-12-25 9:00:00", "%F %T", tz="US/Central") & Timestamp < strptime("2022-12-26 15:00:00", "%F %T", tz="US/Central")) |
       (Site_ID == "9944LD" & Timestamp > strptime("2023-01-26", "%F", tz="US/Mountain") & Timestamp < strptime("2023-01-27 12:00:00", "%F %T", tz="US/Mountain")) |
       (Site_ID == "9944LD" & Timestamp > strptime("2023-02-01 12:00:00", "%F %T", tz="US/Mountain")) |
       (Site_ID == "4228VB" & Timestamp > strptime("2022-12-30", "%F", tz="US/Mountain") & Timestamp < strptime("2023-01-02 18:00:00", "%F %T", tz="US/Mountain")) |
@@ -615,7 +614,7 @@ df <- df %>% mutate(supply_flow_rate_CFM =
 
 
 ## Set sitename to not have to update for each graph:
-sitename = "6950NE"
+sitename = "6112OH"
 
 
 
@@ -928,11 +927,13 @@ COPTimeSeries <- function(timestart, timeend, interval){
 
 
 
-# 0a. Time flagged as operational issue
+# 0a. Time flagged as operational issue or M&V issue
   # Note that hours for NRCan sites should be multiplied by five.
-nrow(df[df$Operational_Issue==1,])/3600
 nrow(df)/3600
+nrow(df[df$Operational_Issue==1,])/3600
 nrow(df[df$Operational_Issue==1,])*100/nrow(df)
+nrow(df[is.na(df$Fan_Power),])/3600
+nrow(df[is.na(df$Fan_Power),])*100/nrow(df)
 
 # 0b. Table of amount of time spent in each OAT bin
   # Note that hours for NRCan sites should be multiplied by five.
@@ -1852,6 +1853,7 @@ for(id in unique(df$Site_ID)){
 
 
 ### Demand Response Graphs ----
+  # U.S. Sites
 DemandResponseEvents <- data.frame(
   Site_ID = c(rep("4228VB",4), rep("6950NE",4), rep("8220XE",4), rep("9944LD",4)),
   Event_Type = rep(c("GCCW","GCMW","CCMW","CCCW"), 4),
@@ -1865,7 +1867,15 @@ DemandResponseEvents <- data.frame(
           strptime("2023-02-13 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-02 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-03 13:00:00", format="%F %T", tz="US/Mountain"),strptime("2023-02-10 17:00:00", format="%F %T", tz="US/Mountain"))
 )
 
-
+  # NRCan sites
+DemandResponseEvents <- data.frame(
+  Site_ID = c(rep("2458CE",3), rep("5291QJ",3)),
+  Event_Type = rep(c("GC","CC","CC"), 2),
+  Start = c(strptime("2023-04-04 10:00:00", format="%F %T", tz="Canada/Eastern"),strptime("2023-04-05 12:00:00", format="%F %T", tz="Canada/Eastern"),strptime("2023-04-07 9:00:00", format="%F %T", tz="Canada/Eastern"),
+            strptime("2023-04-04 10:00:00", format="%F %T", tz="Canada/Eastern"),strptime("2023-04-05 12:00:00", format="%F %T", tz="Canada/Eastern"),strptime("2023-04-07 9:00:00", format="%F %T", tz="Canada/Eastern")),
+  End = c(strptime("2023-04-04 14:00:00", format="%F %T", tz="Canada/Eastern"),strptime("2023-04-05 16:00:00", format="%F %T", tz="Canada/Eastern"),strptime("2023-04-07 15:00:00", format="%F %T", tz="Canada/Eastern"),
+          strptime("2023-04-04 14:00:00", format="%F %T", tz="Canada/Eastern"),strptime("2023-04-05 16:00:00", format="%F %T", tz="Canada/Eastern"),strptime("2023-04-07 15:00:00", format="%F %T", tz="Canada/Eastern"))
+)
 
 # Demand Reponse Time Series Investigation
 DemandResponseTimeSeries <- function(site, timestart, timeend){
@@ -1904,7 +1914,7 @@ DemandResponseTimeSeries <- function(site, timestart, timeend){
     guides(color=guide_legend(override.aes=list(size=3)),
            fill=guide_legend(title="Event Type"))
 }
-DemandResponseTimeSeries("4228VB", "2023-02-09", "2023-02-10")
+DemandResponseTimeSeries("2458CE", "2023-04-04", "2023-04-05")
 # Loop to print. Requires manually deleting of days that do not have events in folder.
 for(id in unique(df$Site_ID)){
   for(d in unique(df$Date[df$Site_ID==id])){
@@ -2027,4 +2037,11 @@ DemandResponseComparison("9944LD", "2023-02-02 09:00:00", "2023-02-01 09:00:00",
 DemandResponseComparison("9944LD", "2023-02-03 09:00:00", "2023-02-05 09:00:00", "CCMW Event", 20)
 DemandResponseComparison("9944LD", "2023-02-10 13:00:00", "2023-02-08 13:00:00", "CCCW Event", 10)
 
+#NRCan sites
+DemandResponseComparison("2458CE", "2023-04-04 10:00:00", "2023-04-06 10:00:00", "GC Event", 100)
+DemandResponseComparison("2458CE", "2023-04-05 12:00:00", "2023-04-02 12:00:00", "CC Event", 25)
+DemandResponseComparison("2458CE", "2023-04-07 10:00:00", "2023-04-03 10:00:00", "CC Event", 50)
+DemandResponseComparison("5291QJ", "2023-04-04 10:00:00", "2023-04-06 10:00:00", "GC Event", 100)
+DemandResponseComparison("5291QJ", "2023-04-05 12:00:00", "2023-03-30 12:00:00", "CC Event", 100)
+DemandResponseComparison("5291QJ", "2023-04-07 10:00:00", "2023-03-31 10:00:00", "CC Event", 50)
 
