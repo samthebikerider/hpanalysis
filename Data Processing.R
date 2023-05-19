@@ -313,8 +313,8 @@ df <- df %>% mutate(
   SA_RH = rowMeans(cbind(SA1_RH, SA2_RH, SA3_RH, SA4_RH), na.rm=T),
   SA_TempF = rowMeans(cbind(SA1_TempF, SA2_TempF, SA3_TempF, SA4_TempF), na.rm=T),
   Room_TempF = rowMeans(cbind(Room1_TempF, Room2_TempF, Room3_TempF, Room4_TempF), na.rm=T),
-    # Fan Power is the only parameter used in both heat capacity and COP, so make it NA if all the key
-    # parameters are not non-NA so that heat and COP calculations are not based on difference rows.
+    # Fan Power is the only parameter used in both heat capacity and COP, so make it NA if any of the key
+    # parameters are NA so that heat and COP calculations are not based on differenct rows.
   Fan_Power = ifelse(is.na(HP_Power) | is.na(Aux_Power) | is.na(Fan_Power) | is.na(SA_TempF) | is.na(RA_TempF), NA, Fan_Power),
   Total_Power = HP_Power + Aux_Power + Fan_Power,
   
@@ -337,7 +337,6 @@ df <- df %>% mutate(
     # System Off
     # Defrost
     # Cooling
-  # Note: Only applicable for winter--need script to identify cooling mode in summer.
 
 df <- df %>% mutate(Operating_Mode = 
   # 1. Identify defrost mode                      
