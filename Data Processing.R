@@ -615,7 +615,15 @@ df <- df %>% mutate(supply_flow_rate_CFM =
 ## Set sitename to not have to update for each graph:
 sitename = "6112OH"
 
-
+## Set minimum temperature for temperature bins for when sample size is too small
+temp_min = ifelse(sitename=="4228VB", 5, ifelse(sitename=="9944LD", -20, ifelse(sitename=="8220XE", -15,
+           ifelse(sitename=="2563EH", -10, ifelse(sitename=="5291QJ", -20, ifelse(sitename=="2896BR", -10,
+           ifelse(sitename=="6112OH", 10, ifelse(sitename=="6950NE", -15, ifelse(sitename=="5539NO", 10,
+           ifelse(sitename=="2458CE", 15, ifelse(sitename=="8726VB", 5, NA)))))))))))
+temp_max = ifelse(sitename=="4228VB", 55, ifelse(sitename=="9944LD", 45, ifelse(sitename=="8220XE", 55,
+           ifelse(sitename=="2563EH", 55, ifelse(sitename=="5291QJ", 45, ifelse(sitename=="2896BR", 55,
+           ifelse(sitename=="6112OH", 55, ifelse(sitename=="6950NE", 55, ifelse(sitename=="5539NO", 55,
+           ifelse(sitename=="2458CE", 45, ifelse(sitename=="8726VB", 55, NA)))))))))))
 
 
 ### Miscellaneous Investigation Graphs ----
@@ -820,7 +828,7 @@ DefrostCycleTimeSeries <- function(site, timestart, timeend){
 # DefrostCycleTimeSeries("6112OH", "2023-02-25", "2023-02-26")
 # Loop to print daily defrost time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
-  dates <- unique(df$Date[df$Site_ID==id])     # Delete first date because it's probably not a full day
+  dates <- unique(df$Date[df$Site_ID==id])
   for(d in dates[-1]){
     d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Defrost-Cycles_',d,'.png'),
@@ -864,7 +872,7 @@ OperationTimeSeries <- function(site, timestart, timeend){
 # OperationTimeSeries("8220XE", "2023-03-05", "2023-03-06")
 # Loop to print daily operation time series graphs, one for each day for each site
 for(id in unique(df$Site_ID)){
-  dates <- unique(df$Date[df$Site_ID==id])     # Delete first date because it's probably not a full day
+  dates <- unique(df$Date[df$Site_ID==id])  
   for(d in dates[-1]){
     d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
     ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
@@ -919,6 +927,18 @@ COPTimeSeries <- function(timestart, timeend, interval){
     guides(color=guide_legend(override.aes=list(size=3)))
 }
 # COPTimeSeries("2023-03-17 06:00", "2023-03-17 12:00", 1)
+# Loop to print daily operation time series graphs, one for each day for each site
+for(id in unique(df$Site_ID)){
+  dates <- unique(df$Date[df$Site_ID==id])     
+  for(d in dates[-1]){
+    d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
+    ggsave(paste0(id, '_Daily-COP_',d,'.png'),
+           plot = COPTimeSeries(id, d, d1, 5),
+           path = paste0(wd,'/Graphs/',id, '/Daily COP/'),
+           width=12, height=4, units='in')
+  }
+}
+rm(dates,d1,d,id)
 
 
 
@@ -927,66 +947,62 @@ COPTimeSeries <- function(timestart, timeend, interval){
 
 
 # 0a. Time flagged as operational issue or M&V issue
-  # Note that hours for NRCan sites should be multiplied by five.
-nrow(df)/3600
-nrow(df[df$Operational_Issue==1,])/3600
-nrow(df[df$Operational_Issue==1,])*100/nrow(df)
-nrow(df[is.na(df$Fan_Power),])/3600
-nrow(df[is.na(df$Fan_Power),])*100/nrow(df)
+  # Hours for NRCan sites should be multiplied by five.
+print_operational_issues <- function(site){
+  ft <- ifelse(df$Site_ID[1] %in% c("2458CE", "5291QJ"), 5, 1)
+  temp <- read.csv(paste0(wd, '/Graphs/Site Comparison/Operational Issues.csv')) %>%
+    filter(Site_ID != site) %>%
+    rbind(df %>% filter(Site_ID == site) %>% group_by(Site_ID) %>%
+            summarize(Total_Hours = round(n()*ft/3600),
+                      Oper_Issue_Hours = sum(Operational_Issue==1, na.rm=T)*ft/3600,
+                      Oper_Issue_Perc = round(sum(Operational_Issue==1, na.rm=T)*100/n(),1),
+                      MV_Issue_Hours = sum(is.na(Fan_Power), na.rm=T)*ft/3600,
+                      MV_Issue_Perc = round(sum(is.na(Fan_Power), na.rm=T)*100/n(),1)))
+  
+  write.csv(temp, paste0(wd, '/Graphs/Site Comparison/Operational Issues.csv'), row.names = F)
+}
+print_operational_issues(sitename)
 
 # 0b. Table of amount of time spent in each OAT bin
-  # Note that hours for NRCan sites should be multiplied by five.
-df %>% filter(OA_TempF <= 55) %>%
-  mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-  group_by(temp_int) %>% 
-  summarize(round(Hours = n()/3600))
+  # Hours for NRCan sites should be multiplied by five.
+  # Need to transpose the data manually to fit in the table for the report.
+print_OAT_summary <- function(site){
+  ft <- ifelse(df$Site_ID[1] %in% c("2458CE", "5291QJ"), 5, 1)
+  temp <- read.csv(paste0(wd, '/Graphs/Site Comparison/OAT Bin Summary.csv')) %>%
+    filter(Site_ID != site) %>% rbind(
+      df %>% filter(OA_TempF <= 55 & Site_ID == site) %>%
+        mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+        group_by(Site_ID, temp_int) %>%
+        summarize(Hours = round(n()*ft/3600)))
+  
+   write.csv(temp, paste0(wd, '/Graphs/Site Comparison/OAT Bin Summary.csv'), row.names = F)
+}
+print_OAT_summary(sitename)
 
-## Set minimum temperature for temperature bins for when sample size is too small
-temp_min = ifelse(sitename=="4228VB", 5,
-                  ifelse(sitename=="9944LD", -20,
-                         ifelse(sitename=="8220XE", -15,
-                                ifelse(sitename=="2563EH", -10,
-                                       ifelse(sitename=="5291QJ", -20,
-                                              ifelse(sitename=="2896BR", -10,
-                                                     ifelse(sitename=="6112OH", 10,
-                                                            ifelse(sitename=="6950NE", -15,
-                                                                   ifelse(sitename=="5539NO", 10,
-                                                                          ifelse(sitename=="2458CE", 15,
-                                                                                 ifelse(sitename=="8726VB", 5,
-                                                                                    NA)))))))))))
-temp_max = ifelse(sitename=="4228VB", 55,
-                  ifelse(sitename=="9944LD", 45,
-                         ifelse(sitename=="8220XE", 55,
-                                ifelse(sitename=="2563EH", 55,
-                                       ifelse(sitename=="5291QJ", 45,
-                                              ifelse(sitename=="2896BR", 55,
-                                                     ifelse(sitename=="6112OH", 55,
-                                                            ifelse(sitename=="6950NE", 55,
-                                                                   ifelse(sitename=="5539NO", 55,
-                                                                          ifelse(sitename=="2458CE", 45,
-                                                                                 ifelse(sitename=="8726VB", 55,
-                                                                                        NA)))))))))))
 
 
 # 1a. Operating mode daily summary
-OperatingModeTime <- function(timestart, timeend){
   # Look at a time series graph of each day to see fraction of time in each operating mode
-  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==sitename]),
-                Operating_Mode = ifelse(is.na(Operating_Mode), "Data Unavailable", Operating_Mode)) %>%
-    filter(Timestamp >= strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename]) &
-             Timestamp <= strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename])) %>%
-    group_by(Date, Operating_Mode) %>%
-    summarize(Mode_Time = n()) %>%
-    ggplot(aes(x=as.POSIXct(Date, format="%F", tz=metadata$Timezone[metadata$Site_ID==sitename]), fill=Operating_Mode, y=Mode_Time)) +
+write.csv(df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==sitename]),
+                        Operating_Mode = ifelse(is.na(Operating_Mode), "Data Unavailable", Operating_Mode)) %>%
+            group_by(Site_ID, Date, Operating_Mode) %>%
+            summarize(Mode_Time = n()),
+          file=paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/", sitename, ".csv"),
+          row.names=F)
+OperatingModeTime <- function(site, timestart, timeend){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID == site) %>%
+    ggplot(aes(x=as.POSIXct(Date, format="%F", tz=metadata$Timezone[metadata$Site_ID==site]), fill=Operating_Mode, y=Mode_Time)) +
     geom_bar(position="fill", stat="identity") +
     scale_x_datetime(date_breaks = "1 week", 
                      date_labels = "%F",
-                     limits=c(as.POSIXct(strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename])),
-                              as.POSIXct(strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename])))) +
+                     limits=c(as.POSIXct(strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])),
+                              as.POSIXct(strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])))) +
     scale_fill_manual(name = "Operating Mode",
                       breaks = c("Defrost","Heating-HP Only","Heating-Aux Only","Heating-Aux/HP","Cooling","System Off","Data Unavailable"),
                       values = c("#009E73","#F0E442","#CC3300","#E69F00","#3333FF","#666666","lightgrey")) +
-    labs(title=paste0("Fraction of time in each operating mode per day for site ", sitename),x="", 
+    labs(title=paste0("Fraction of time in each operating mode per day for site ", site),x="", 
          y="Fraction of Time") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -999,10 +1015,14 @@ OperatingModeTime <- function(timestart, timeend){
 }
 # OperatingModeTime("12/15/2022 00:00", "3/30/2023 23:59")
 # Print graph to folder--manually adjust date.
-ggsave(paste0(sitename, '_Operating_Mode_Percent_Time.png'),
-       plot = OperatingModeTime("12/15/2022 00:00", "3/30/2023 23:59"),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_Operating_Mode_Percent_Time.png'),
+       plot = OperatingModeTime(site, "12/15/2022 00:00", "3/30/2023 23:59"),
+       path = paste0(wd,'/Graphs/',site, '/'),
        width=12, height=4, units='in')
+}
 
 # 1b. Table of 1a with temperature and RH
   # Save to file long table with row for every day
@@ -1020,33 +1040,47 @@ write.csv(
               Max_Temp=max(OA_TempF, na.rm=T),
               Avg_RH=mean(OA_RH, na.rm=T)), 
   file=paste0(wd, "/Graphs/", id, "/Daily_Operation_Summary_", id, ".csv"), row.names=F)
-# Copy summary of table into Word document
-df %>% summarize(Hours_Defrost=round(sum(Operating_Mode=="Defrost", na.rm=T)/3600),
-              Hours_HP_Only=round(sum(Operating_Mode=="Heating-HP Only", na.rm=T)/3600),
-              Hours_Aux_Only=round(sum(Operating_Mode=="Heating-Aux Only", na.rm=T)/3600),
-              Hours_HP.Aux=round(sum(Operating_Mode=="Heating-Aux/HP", na.rm=T)/3600),
-              Hours_System_Off=round(sum(Operating_Mode=="System Off", na.rm=T)/3600),
-              Hours_Data_Unavailable=round(sum(is.na(Operating_Mode))/3600),
-              Min_Temp=min(OA_TempF, na.rm=T),
-              Avg_Temp=mean(OA_TempF, na.rm=T),
-              Max_Temp=max(OA_TempF, na.rm=T),
-              Avg_RH=mean(OA_RH, na.rm=T))
+# Print summary site comparison
+print_operating_summary <- function(site){
+  ft <- ifelse(df$Site_ID[1] %in% c("2458CE", "5291QJ"), 5, 1)
+  temp <- read.csv(paste0(wd, '/Graphs/Site Comparison/Operating Mode Summary.csv')) %>%
+    filter(Site_ID != site) %>% rbind(df %>% filter(Site_ID==site) %>% group_by(Site_ID) %>%
+      summarize(Hours_Defrost=round(sum(Operating_Mode=="Defrost", na.rm=T)*ft/3600),
+                Hours_HP_Only=round(sum(Operating_Mode=="Heating-HP Only", na.rm=T)*ft/3600),
+                Hours_Aux_Only=round(sum(Operating_Mode=="Heating-Aux Only", na.rm=T)*ft/3600),
+                Hours_HP.Aux=round(sum(Operating_Mode=="Heating-Aux/HP", na.rm=T)*ft/3600),
+                Hours_System_Off=round(sum(Operating_Mode=="System Off", na.rm=T)*ft/3600),
+                Hours_Data_Unavailable=round(sum(is.na(Operating_Mode))*ft/3600),
+                Min_Temp=round(quantile(OA_TempF, 0.05, na.rm=T)),
+                Median_Temp=round(median(OA_TempF, na.rm=T)),
+                Max_Temp=round(quantile(OA_TempF, 0.95, na.rm=T)),
+                Avg_RH=round(mean(OA_RH, na.rm=T))))
+  
+  write.csv(temp, paste0(wd, '/Graphs/Site Comparison/Operating Mode Summary.csv'), row.names = F)
+}
+print_operating_summary(sitename)
+
 
 
 # 1c. Operating mode summary by OAT bin
-OperatingModeOAT <- function(){
   # Look at a time series graph of each day to see fraction of time in each operating mode
-  df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
-    mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55)),
-           Operating_Mode = ifelse(is.na(Operating_Mode), "Data Unavailable", Operating_Mode)) %>%
-    group_by(temp_int, Operating_Mode) %>%
-    summarize(Mode_Time=n()) %>%
+write.csv(df %>% filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55)),
+                   Operating_Mode = ifelse(is.na(Operating_Mode), "Data Unavailable", Operating_Mode)) %>%
+            group_by(Site_ID, temp_int, Operating_Mode) %>%
+            summarize(Mode_Time=n()),
+          file=paste0(wd, "/Graphs/Graph Data/Operating Mode OAT/", sitename, ".csv"),
+          row.names=F)
+OperatingModeOAT <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode OAT/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID == site) %>%
     ggplot(aes(x=temp_int, fill=Operating_Mode, y=Mode_Time)) +
     geom_bar(position="fill", stat="identity") +
     scale_fill_manual(name = "Operating Mode", 
                       breaks = c("Defrost","Heating-HP Only","Heating-Aux Only","Heating-Aux/HP","Cooling","System Off","Data Unavailable"),
                       values = c("#009E73","#F0E442","#CC3300","#E69F00","#3333FF","#666666","lightgrey")) +
-    labs(title=paste0("Fraction of time in each operating mode by OAT bin for site ", sitename),x="", 
+    labs(title=paste0("Fraction of time in each operating mode by OAT bin for site ", site),x="", 
          y="Fraction of Time") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
@@ -1058,11 +1092,14 @@ OperatingModeOAT <- function(){
 }
 # OperatingModeOAT()
 # Print graph to folder--manually adjust date.
-ggsave(paste0(sitename, '_Operating_Mode_Percent_Time_by_OAT.png'),
-       plot = OperatingModeOAT(),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode OAT/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode OAT/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode OAT/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_Operating_Mode_Percent_Time_by_OAT.png'),
+       plot = OperatingModeOAT(site),
+       path = paste0(wd,'/Graphs/',site, '/'),
        width=12, height=4, units='in')
-
+}
 
 # 1d. Operating mode summary for all sites 0-10F
 # Print out data for each site for 0-10F range
@@ -1071,10 +1108,10 @@ write.csv(df %>%
             mutate(Operating_Mode = ifelse(is.na(Operating_Mode), "Data Unavailable", Operating_Mode)) %>%
             group_by(Site_ID, Operating_Mode) %>%
             summarize(Mode_Time=n()),
-            file=paste0(wd, "/Graphs/Site Comparison/Operating Time 0-10F/", sitename, ".csv"),
+            file=paste0(wd, "/Graphs/Graph Data/Operating Time 0-10F/", sitename, ".csv"),
           row.names=F)
 Operation_5F_all_sites <- function(){
-  list.files(path = paste0(wd, "/Graphs/Site Comparison/Operating Time 0-10F/"),pattern="*.csv", full.names=T) %>% 
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Time 0-10F/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
     mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
@@ -1108,10 +1145,10 @@ write.csv(df %>%
             mutate(Operating_Mode = ifelse(is.na(Operating_Mode), "Data Unavailable", Operating_Mode)) %>%
             group_by(Site_ID, Operating_Mode) %>%
             summarize(Mode_Time=n()),
-          file=paste0(wd, "/Graphs/Site Comparison/Operating Time 32F Below/", sitename, ".csv"),
+          file=paste0(wd, "/Graphs/Graph Data/Operating Time 32F Below/", sitename, ".csv"),
           row.names=F)
 Operation_32F_all_sites <- function(){
-  list.files(path = paste0(wd, "/Graphs/Site Comparison/Operating Time 32F Below/"),pattern="*.csv", full.names=T) %>% 
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Time 32F Below/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
     mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
@@ -1150,8 +1187,7 @@ ggsave('Operating_Mode_32F_Site_Comparison.png',
 # 2. Heating mode cycling frequency
   # To identify short cycling and modulation.
 write.csv(df %>% 
-            # mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
-            # filter(OA_TempF <= temp_max & OA_TempF > temp_min) %>%
+            filter(HP_Status=="On") %>%
             group_by(Site_ID) %>%
             summarize(Long_Cycles = sum(HP_Cycle_Runtimes > 15, na.rm=T)*3600/n(),
                       Med_Cycles = sum(HP_Cycle_Runtimes <= 15 & HP_Cycle_Runtimes >= 5, na.rm=T)*3600/n(),
@@ -1170,7 +1206,7 @@ HeatCycling <- function(){
     scale_fill_manual(limits = c("Long_Cycles", "Med_Cycles", "Short_Cycles"),
                       labels=c("Long (>15 mins)", "Medium (5-10 mins)", "Short (<5 mins)"), 
                       values=c("#F8766D", "#00BFC4", "#C77CFF")) +
-    labs(title="Number of HP cycles per hour categorized by length site comparison",
+    labs(title="Number of HP cycles per operating hour categorized by length site comparison",
          x="Manufacturer-Site ID",
          y="HP Cycles Per Hour") +
     theme_bw() +
@@ -1188,18 +1224,8 @@ ggsave('Heat_Cycling.png',
        width=12, height=4, units='in')
 
 
-# Print values for site comparison table
-df %>% group_by(Site_ID) %>% summarize(Defrost_Frequency = round(sum(!is.na(Defrost_Cycle_Runtimes))*3600/n(),2),
-                                       Avg_Defrost_Duration = round(mean(Defrost_Cycle_Runtimes,na.rm=T),1),
-                                       Med_Defrost_Duration = round(median(Defrost_Cycle_Runtimes,na.rm=T),1),
-                                       Defrost_Time_Ratio = round(sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),1),
-                                       HP_Frequency = round(sum(!is.na(HP_Cycle_Runtimes))*3600/n(),2),
-                                       Avg_HP_Duration = round(mean(HP_Cycle_Runtimes,na.rm=T),1),
-                                       Med_HP_Duration = round(median(HP_Cycle_Runtimes,na.rm=T),1))
 
-
-
-# 3. Defrost mode cycling frequency by OAT bin
+# 3a. Defrost mode cycling frequency by OAT bin
 write.csv(df %>% 
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55)),
                    Time_Ratio = NA) %>%
@@ -1242,6 +1268,24 @@ for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Defrost OAT/
        path = paste0(wd,'/Graphs/',site, '/'),
        width=12, height=4, units='in')
 }
+
+# 3b. Print values for site comparison table
+print_defrost_summary <- function(site){
+  ft <- ifelse(df$Site_ID[1] %in% c("2458CE", "5291QJ"), 5, 1)
+  temp <- read.csv(paste0(wd, '/Graphs/Site Comparison/Defrost Summary.csv')) %>%
+    filter(Site_ID != site) %>% rbind(df %>% filter(Site_ID==site) %>% group_by(Site_ID) %>%
+                                        summarize(Defrost_Frequency = round(sum(!is.na(Defrost_Cycle_Runtimes))*3600/ft/sum(HP_Status=="On",na.rm=T),2),
+                                                  Avg_Defrost_Duration = round(mean(Defrost_Cycle_Runtimes,na.rm=T),1),
+                                                  Med_Defrost_Duration = round(median(Defrost_Cycle_Runtimes,na.rm=T),1),
+                                                  Defrost_Time_Ratio = round(sum(Defrost_Cycle_Runtimes,na.rm=T)*60*100/sum(HP_Status=="On",na.rm=T),1),
+                                                  HP_Frequency = round(sum(!is.na(HP_Cycle_Runtimes))*3600/ft/sum(HP_Status=="On",na.rm=T),2),
+                                                  Avg_HP_Duration = round(mean(HP_Cycle_Runtimes,na.rm=T),1),
+                                                  Med_HP_Duration = round(median(HP_Cycle_Runtimes,na.rm=T),1)))
+  
+  write.csv(temp, paste0(wd, '/Graphs/Site Comparison/Defrost Summary.csv'), row.names = F)
+}
+print_defrost_summary(sitename)
+
 
                                        
 # 4. Defrost mode cycling frequency by RH bin
@@ -1363,7 +1407,7 @@ for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Aux Staging/
          width=12, height=4, units='in')
 }
 
-# 6. Heating capacity (i.e., heating load) (Btu/h) by OAT bin
+# 6a. Heating capacity (i.e., heating load) (Btu/h) by OAT bin
 # Save data to file to be able to easily reproduce sites.
 write.csv(df %>% 
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
@@ -1406,6 +1450,37 @@ for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Heating Capa
 }
 
 
+# 6b. Table to show the "maximum" heating capacity in each OAT bin
+  # Using the 95th percentile to account for potential outliers.
+  # Need to transpose data manually to match table in report.
+print_heat_capacity <- function(site){
+  temp <- read.csv(paste0(wd, '/Graphs/Site Comparison/Max Heat Capacity.csv')) %>%
+    filter(Site_ID != site) %>% 
+    rbind(df %>% filter(Site_ID==site & OA_TempF <= temp_max & OA_TempF > temp_min) %>%
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+            group_by(Site_ID, temp_int) %>%
+            summarize(Max_Capacity = round(quantile(Heat_Output_Btu_h, c(0.95), na.rm = T)/1000)))
+  
+  write.csv(temp, paste0(wd, '/Graphs/Site Comparison/Max Heat Capacity.csv'), row.names = F)
+}
+print_heat_capacity(sitename)
+
+# 6c. Table to show COP in aux only mode as a comparison to the expected 100% efficiency.
+  # Hours will need to be multiplied by 5 for NRCan sites
+print_aux_only_cop <- function(site){
+  ft <- ifelse(df$Site_ID[1] %in% c("2458CE", "5291QJ"), 5, 1)
+  temp <- read.csv(paste0(wd, '/Graphs/Site Comparison/Aux Only COP.csv')) %>%
+    filter(Site_ID != site) %>% 
+    rbind(df %>% filter(Site_ID==site & !is.na(Operating_Mode) & Operating_Mode=="Heating-Aux Only") %>%
+  group_by(Site_ID) %>%
+  summarize(Aux_Only_Hours = round(n()*ft/3600,1),
+            Avg_Heat_Output = round(mean(Heat_Output_Btu_h, na.rm = T)/3412,2),
+            Avg_Power_Input = round(mean(Aux_Power, na.rm = T),2),
+            Avg_COP = round(Avg_Heat_Output / Avg_Power_Input,2)))
+  
+  write.csv(temp, paste0(wd, '/Graphs/Site Comparison/Aux Only COP.csv'), row.names = F)
+}
+print_aux_only_cop(sitename)
 
 # 7a. COP vs outdoor air temperature for each site
   # When printing individual site graphs, export the datapoints needed to make this graph 
@@ -1415,10 +1490,10 @@ write.csv(df %>%
             group_by(Site_ID, temp_int) %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
                       COP_Total = sum(Heat_Output_Btu_h, na.rm=T)/sum(Total_Power, na.rm=T)/3412),
-          file=paste0(wd, "/Graphs/Site Comparison/COP by OAT Bin/", sitename, ".csv"),
+          file=paste0(wd, "/Graphs/Graph Data/COP by OAT Bin/", sitename, ".csv"),
           row.names=F)
 Heat_COP_all_sites <- function(manufacturers){
-  list.files(path = paste0(wd, "/Graphs/Site Comparison/COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
+  list.files(path = paste0(wd, "/Graphs/Graph Data/COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
     filter(Manufacturer %in% manufacturers) %>%
@@ -1463,10 +1538,10 @@ write.csv(df %>%
             group_by(Site_ID, temp_int) %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
                       COP_HP = sum(Heat_Output_Btu_h - 3412*Aux_Power, na.rm=T)/sum(HP_Power + Fan_Power, na.rm=T)/3412),
-          file=paste0(wd, "/Graphs/Site Comparison/HP COP by OAT Bin/", sitename, ".csv"),
+          file=paste0(wd, "/Graphs/Graph Data/HP COP by OAT Bin/", sitename, ".csv"),
           row.names=F)
 Heat_COP_HP_all_sites <- function(manufacturers, spec1, spec2){
-  list.files(path = paste0(wd, "/Graphs/Site Comparison/HP COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
+  list.files(path = paste0(wd, "/Graphs/Graph Data/HP COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
     filter(Manufacturer %in% manufacturers) %>%
@@ -1514,10 +1589,10 @@ write.csv(df %>%
             group_by(Site_ID, temp_int) %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
                       COP_HP = sum(Heat_Output_Btu_h - 3412*Aux_Power, na.rm=T)/sum(HP_Power + Fan_Power, na.rm=T)/3412),
-          file=paste0(wd, "/Graphs/Site Comparison/HP COP by OAT Bin w Defrost/", sitename, ".csv"),
+          file=paste0(wd, "/Graphs/Graph Data/HP COP by OAT Bin w Defrost/", sitename, ".csv"),
           row.names=F)
 Heat_COP_HP_all_sites_defrost <- function(manufacturers, spec1, spec2){
-  list.files(path = paste0(wd, "/Graphs/Site Comparison/HP COP by OAT Bin w Defrost/"),pattern="*.csv", full.names=T) %>% 
+  list.files(path = paste0(wd, "/Graphs/Graph Data/HP COP by OAT Bin w Defrost/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
     filter(Manufacturer %in% manufacturers) %>%
@@ -1566,10 +1641,10 @@ write.csv(df %>%
             group_by(Site_ID, temp_int) %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
                       Adjusted_COP_Total = sum(Heat_Output_Btu_h_adjusted, na.rm=T)/sum(Total_Power, na.rm=T)/3412),
-          file=paste0(wd, "/Graphs/Site Comparison/Adjusted COP by OAT Bin/", id, ".csv"),
+          file=paste0(wd, "/Graphs/Graph Data/Adjusted COP by OAT Bin/", id, ".csv"),
           row.names=F)
 Adjusted_Heat_COP_all_sites <- function(){
-  list.files(path = paste0(wd, "/Graphs/Site Comparison/Adjusted COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Adjusted COP by OAT Bin/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
     mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
