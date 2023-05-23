@@ -1184,7 +1184,7 @@ ggsave('Operating_Mode_32F_Site_Comparison.png',
 ### Outdoor Air Graphs ----
 
 
-# 2. Heating mode cycling frequency
+# 2a. Heating mode cycling frequency site comparison
   # To identify short cycling and modulation.
 write.csv(df %>% 
             filter(HP_Status=="On") %>%
@@ -1195,7 +1195,7 @@ write.csv(df %>%
                       Avg_HP_Cycle_Duration = mean(HP_Cycle_Runtimes, na.rm=T)),
             file=paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling/", sitename, ".csv"),
           row.names=F)
-HeatCycling <- function(){
+HeatCyclingComparison <- function(){
   list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     gather(key = "Cycle_Length", value = "Cycles_Per_Hour", Long_Cycles:Short_Cycles) %>%
@@ -1222,6 +1222,88 @@ ggsave('Heat_Cycling.png',
        plot = HeatCycling(),
        path = paste0(wd,'/Graphs/Site Comparison/'),
        width=12, height=4, units='in')
+
+# 2b. Heating mode cycling frequency
+# To identify short cycling and modulation.
+write.csv(df %>% 
+            filter(HP_Status=="On") %>%
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
+            group_by(Site_ID, temp_int) %>%
+            summarize(OA_TempF = median(OA_TempF, na.rm=T),
+                      Frequency = sum(is.na(HP_Cycle_Runtimes))*3600/n(),
+                      Duration = median(HP_Cycle_Runtimes, na.rm=T)),
+          file=paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling OAT/", sitename, ".csv"),
+          row.names=F)
+HeatCyclingOAT <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling OAT/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID==site) %>%
+    ggplot(aes(x = OA_TempF)) + 
+    geom_point(aes(y = Frequency*2, color = "Cycles Per Hour")) +
+    geom_point(aes(y = Duration, color = "Cycle Duration")) +
+    geom_line(aes(y = Frequency*2, color = "Cycles Per Hour", group=1)) +
+    geom_line(aes(y = Duration, color = "Cycle Duration", group=2)) +
+    scale_color_manual(values=c("black", "#00BFC4")) +
+    scale_y_continuous(name = "Median HP Cycle Duration (mins)",
+                       sec.axis = sec_axis(~./2, name ="HP Average Cycles Per Hour Operation")) +
+    labs(title=paste0("Heat pump cycle frequency and duration by OAT for site ", site),
+         x="Outdoor Air Temperature (F)") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          axis.text.x = element_text(family = "Times New Roman", angle=-70, hjust=-0.5),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+}
+# HeatCyclingOAT(sitename)
+# Print graph to folder.
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling OAT/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling OAT/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling OAT/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_HP_Cycling_vs_OAT.png'),
+         plot = HeatCyclingOAT(site),
+         path = paste0(wd,'/Graphs/',site, '/'),
+         width=12, height=4, units='in')
+}
+
+# 2c. Heat pump power variation/modulation
+  # To identify ability to modulate to lower HP power.
+write.csv(df %>% 
+            filter(HP_Status=="On") %>%
+            group_by(Site_ID, Date, Hour, minute(Timestamp)) %>%
+            summarize(OA_TempF = median(OA_TempF, na.rm=T),
+                      HP_Power = mean(HP_Power, na.rm=T)) %>%
+            mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))),
+          file=paste0(wd, "/Graphs/Graph Data/Heat Pump Power Variation/", sitename, ".csv"),
+          row.names=F)
+HPPowerVariation <- function(site){
+  list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Power Variation/"),pattern="*.csv", full.names=T) %>% 
+    map_df(~read.csv(.)) %>%
+    filter(Site_ID==site) %>%
+    ggplot(aes(x = temp_int)) + 
+    geom_boxplot(aes(y = HP_Power)) +
+    labs(title=paste0("Heat pump power variation by OAT for site ", site),
+         x="Outdoor Air Temperature Bin (F)",
+         y="Heat Pump Power (kW)") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          legend.title = element_blank(),
+          axis.text.x = element_text(family = "Times New Roman", angle=-70, hjust=-0.5),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5))
+}
+# HPPowerVariation(sitename)
+# Print graph to folder.
+for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Power Variation/"),pattern="*.csv", full.names=T),
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Power Variation/"),pattern="*.csv", full.names=T)) - 9,
+                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Power Variation/"),pattern="*.csv", full.names=T)) - 4)){
+  ggsave(paste0(site, '_HP_Power_Variation_vs_OAT_Bin.png'),
+         plot = HPPowerVariation(site),
+         path = paste0(wd,'/Graphs/',site, '/'),
+         width=12, height=4, units='in')
+}
 
 
 
