@@ -7,12 +7,6 @@ library(lubridate)
 library(stringr)
 library(data.table)
 
-# df <- read.csv(paste0(wd, "/Raw Data/PNNL_ccASHP__2896BR_FEB-MAR.csv")) %>% 
-#   select(index, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux1_Power, Aux2_Power, 
-#   Aux3_Power, Aux4_Power, OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, 
-#   SA2_RH, RA_TempF, RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, 
-#   Room2_RH, Room3_TempF, Room3_RH, SA3_TempF, SA3_RH, SA4_TempF, SA4_RH)
-# write.csv(df, paste0(wd, "/Raw Data/PNNL_ccASHP__2896BR_2023-03-13.csv"))
 
 ### Data Load and Cleaning ----
 
@@ -115,13 +109,13 @@ metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 # Select sites to read
 sites <- c(
   # "2563EH",
-  # "2896BR",
+  "2896BR",
   # "6112OH",
   # "6950NE",
   # "7083LM",  # Still no data for this site.
   # "8220XE",
   # "8726VB",
-  "9944LD",
+  # "9944LD",
   # "4228VB",
   # "5539NO",
   # "5291QJ",
@@ -625,7 +619,7 @@ df <- df %>%
 
 
 ## Set sitename to not have to update for each graph:
-sitename = "9944LD"
+sitename = "2896BR"
 
 ## Set minimum temperature for temperature bins for when sample size is too small
 temp_min = ifelse(sitename=="4228VB", 5, ifelse(sitename=="9944LD", -20, ifelse(sitename=="8220XE", -15,
@@ -1246,7 +1240,9 @@ write.csv(df %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
                       Cycle_Count = sum(!is.na(HP_Cycle_Runtimes)),
                       Frequency = sum(!is.na(HP_Cycle_Runtimes))*3600/n(),
-                      Duration = median(HP_Cycle_Runtimes, na.rm=T)),
+                      Min_Duration = min(HP_Cycle_Runtimes, na.rm=T),
+                      Median_Duration = median(HP_Cycle_Runtimes, na.rm=T),
+                      Max_Duration = max(HP_Cycle_Runtimes, na.rm=T)),
           file=paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling OAT/", sitename, ".csv"),
           row.names=F)
 HeatCyclingOAT <- function(site){
@@ -1255,14 +1251,11 @@ HeatCyclingOAT <- function(site){
     filter(Site_ID==site & Cycle_Count > 10) %>%
     ggplot(aes(x = OA_TempF)) + 
     geom_point(aes(y = Frequency, color = "Cycles Per Hour")) +
-    geom_point(aes(y = Duration, color = "Cycle Duration")) +
     geom_line(aes(y = Frequency, color = "Cycles Per Hour", group=1)) +
-    geom_line(aes(y = Duration, color = "Cycle Duration", group=2)) +
-    scale_color_manual(values=c("black", "#00BFC4")) +
-    scale_y_continuous(name = "Median HP Cycle Duration (mins)",
-                       sec.axis = sec_axis(~., name ="Average HP Cycles Per Hour of Operation")) +
-    labs(title=paste0("Heat pump cycle frequency and duration by OAT for site ", site),
-         x="Outdoor Air Temperature (F)") +
+    scale_color_manual(values=c("#00BFC4")) +
+    labs(title=paste0("Heat pump cycle frequency by OAT for site ", site),
+         x="Outdoor Air Temperature (F)",
+         y="Average HP Cycles Per Hour of Operation") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           legend.title = element_blank(),
@@ -1280,6 +1273,18 @@ for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Cy
          path = paste0(wd,'/Graphs/',site, '/'),
          width=12, height=4, units='in')
 }
+
+# Print table with min, median, and max heat pump cycle duration by site
+write.csv(list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling OAT/"),pattern="*.csv", full.names=T) %>% 
+              map_df(~read.csv(.)) %>%
+            group_by(Site_ID) %>%
+            summarize(Total_Cycle_Count = sum(Cycle_Count),
+                      Min_Duration = round(min(Min_Duration, na.rm=T)),
+                      Median_Duration = round(sum(Cycle_Count*Median_Duration, na.rm=T)/sum(Cycle_Count, na.rm=T)),
+                      Max_Duration = round(max(Max_Duration, na.rm=T))),
+          file=paste0(wd, "/Graphs/Site Comparison/Heat Pump Cycling Duration.csv"),
+          row.names=F)
+
 
 # 2c. Heat pump power variation/modulation
   # To identify ability to modulate to lower HP power.
