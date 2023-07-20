@@ -24,27 +24,41 @@ temp = list.files(pattern="\\.csv$")
 for (i in 1:length(temp)) assign(temp[i], read_csv(temp[i]))
 
 # make df names a bit easier
+site_2458 <- `2458CE_aggregated_hourly.csv`
+rm(`2458CE_aggregated_hourly.csv`)
+
 site_2563 <- `2563EH_aggregated_hourly.csv`
 rm(`2563EH_aggregated_hourly.csv`)
+
 site_2896 <- `2896BR_aggregated_hourly.csv`
 rm(`2896BR_aggregated_hourly.csv`)
+
 site_4228 <- `4228VB_aggregated_hourly.csv`
 rm(`4228VB_aggregated_hourly.csv`)
+
+site_5291 <- `5291QJ_aggregated_hourly.csv`
+rm(`5291QJ_aggregated_hourly.csv`)
+
 site_5539 <- `5539NO_aggregated_hourly.csv`
 rm(`5539NO_aggregated_hourly.csv`)
+
 site_6112 <- `6112OH_aggregated_hourly.csv`
 rm(`6112OH_aggregated_hourly.csv`)
+
 site_6950 <- `6950NE_aggregated_hourly.csv`
 rm(`6950NE_aggregated_hourly.csv`)
+
 site_8726 <- `8726VB_aggregated_hourly.csv`
 rm(`8726VB_aggregated_hourly.csv`)
-site_8820 <- `8820XE_aggregated_hourly.csv`
-rm(`8820XE_aggregated_hourly.csv`)
+
+site_8220 <- `8220XE_aggregated_hourly.csv`
+rm(`8220XE_aggregated_hourly.csv`)
+
 site_9944 <- `9944LD_aggregated_hourly.csv`
 rm(`9944LD_aggregated_hourly.csv`)
 
-df_list <- list(site_2563, site_2896, site_4228, site_5539, site_6112,
-             site_6950, site_8726, site_8820, site_9944)
+df_list <- list(site_2458, site_2563, site_2896, site_4228, site_5291, site_5539,
+                site_6112, site_6950, site_8726, site_8220, site_9944)
 
 line_plot_ts <- function(data, y_var, y_lab, title, x_lab){
   p1 <- ggplot(data) +

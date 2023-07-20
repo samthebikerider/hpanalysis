@@ -117,9 +117,9 @@ merge_aggd_dfs <- function(df, site, tz){
   missing_cols <- setdiff(df_cols, names(df_out))
   df_out[missing_cols] <- NA
   df_out <- df_out[df_cols]
-  # df_temp <- read.csv(name_file)
-  # df_temp$datetime_UTC <- as.POSIXct(df_temp$datetime_UTC, format = "%Y-%m-%d %H", tz = "UTC")
-  # df_out <- rbind(df_temp, df_agg)
+  df_temp <- read.csv(name_file)
+  df_temp$datetime_UTC <- as.POSIXct(df_temp$datetime_UTC, format = "%Y-%m-%d %H", tz = "UTC")
+  df_out <- rbind(df_temp, df_agg)
   df_out <- df_out[!duplicated(df_out), ]
   df_out$site_id <- site
   df_out$unit_id <- site

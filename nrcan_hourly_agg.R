@@ -93,40 +93,30 @@ agg_dfs <- function(df){
 }
 
 # function to merge aggregated df with existing df
-merge_aggd_dfs <- function(df, site){
-  path = "/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data/"
-  setwd(path)
+merge_aggd_dfs <- function(df, site, tz){
+  df_cols <- c("site_id", "unit_id", "local_datetime", "datetime_UTC", "ODU_pwr_kW", "fan_pwr_kW",
+               "AHU_pwr_kW",	"auxheat_pwr_kW",	"OA_temp_F",	"OA_RH",	"SA_temp_blower_cabinet_F",
+               "SA_RH_blower_cabinet",	"SA_temp_duct1_F",	"SA_RH_duct1",	"SA_temp_duct2_F",
+               "SA_RH_duct2","SA_temp_duct3_F", "SA_RH_duct3", "SA_temp_duct4_F", "SA_RH_duct4",
+               "RA_temp_F",	"RA_RH",	"AHU_ambient_temp_F",	"AHU_ambient_RH",
+               "room1_temp_F",	"room1_RH",	"room2_temp_F",	"room2_RH",	"room3_temp_F",	"room3_RH",
+               "room4_temp_F",	"room4_RH",	"HP_system_pwr_kW",	"reversing_valve_signal_V")
+  setwd("/Users/rose775/OneDrive - PNNL/Desktop/Projects/ccHP/Project Management/Data Analysis/hourly_site_data/")
   name_file <- str_glue('{site}_aggregated_hourly.csv')
-  df_out <- agg_dfs(df)
+  df_out <- agg_dfs(df, tz)
+  missing_cols <- setdiff(df_cols, names(df_out))
+  df_out[missing_cols] <- NA
+  df_out <- df_out[df_cols]
+  df_temp <- read.csv(name_file)
+  df_temp$datetime_UTC <- as.POSIXct(df_temp$datetime_UTC, format = "%Y-%m-%d %H", tz = "UTC")
+  df_out <- rbind(df_temp, df_agg)
   df_out <- df_out[!duplicated(df_out), ]
   df_out$site_id <- site
   df_out$unit_id <- site
-  df_out$reversing_valve_signal_V <- NA
-  df_out$SA_temp_duct2_F <- NA
-  df_out$SA_RH_duct2 <- NA
-  df_out$SA_RH_duct3 <- NA
-  df_out$SA_temp_duct3_F <- NA
-  df_out$SA_temp_duct4_F <- NA
-  df_out$SA_RH_duct4 <- NA
-  df_out$room2_temp_F <- NA
-  df_out$room2_RH <- NA
-  df_out$room3_temp_F <- NA
-  df_out$room3_RH <- NA
-  df_out$room4_temp_F <- NA
-  df_out$room4_RH <- NA
-  df_out$AHU_ambient_temp_F <- NA
-  df_out$AHU_ambient_RH <- NA
-  df_out$SA_temp_blower_cabinet_F <- NA
-  df_out$SA_RH_blower_cabinet <- NA
   df_out <- df_out %>%
-    select(site_id, unit_id, local_datetime, datetime_UTC, ODU_pwr_kW, fan_pwr_kW,
-           AHU_pwr_kW,	auxheat_pwr_kW,	OA_temp_F,	OA_RH,	SA_temp_blower_cabinet_F,
-           SA_RH_blower_cabinet,	SA_temp_duct1_F,	SA_RH_duct1,	SA_temp_duct2_F,
-           SA_RH_duct2,	RA_temp_F,	RA_RH,	AHU_ambient_temp_F,	AHU_ambient_RH,
-           room1_temp_F,	room1_RH,	room2_temp_F,	room2_RH,	room3_temp_F,	room3_RH,
-           room4_temp_F,	room4_RH,	HP_system_pwr_kW,	reversing_valve_signal_V)
-  write.csv(df_out, name_file, row.names = FALSE) # save site .csv
-  # return(df_out) # make df obj
+    select(any_of(df_cols))
+  write.csv(df_out, name_file, row.names = FALSE)
+  #return(df_out)
 }
 
 merge_aggd_dfs(site_5291QJ, "5291QJ")
