@@ -109,7 +109,7 @@ metadata <- read_csv(file = paste0(wd, "/site-metadata.csv"))
 # Select sites to read
 sites <- c(
   # "2563EH",
-  "2896BR",
+  # "2896BR",
   # "6112OH",
   # "6950NE",
   # "7083LM",  # Still no data for this site.
@@ -119,7 +119,7 @@ sites <- c(
   # "4228VB",
   # "5539NO",
   # "5291QJ",
-  # "2458CE",
+  "2458CE",
   "")
 timeframe <- c(strptime("12/10/2022", format="%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==sites[1]]), 
                strptime("4/01/2023", format="%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==sites[1]]))
@@ -619,7 +619,7 @@ df <- df %>%
 
 
 ## Set sitename to not have to update for each graph:
-sitename = "2896BR"
+sitename = "2458CE"
 
 ## Set minimum temperature for temperature bins for when sample size is too small
 temp_min = ifelse(sitename=="4228VB", 5, ifelse(sitename=="9944LD", -20, ifelse(sitename=="8220XE", -15,
@@ -1043,9 +1043,9 @@ write.csv(
               Hours_System_Off=sum(Operating_Mode=="System Off", na.rm=T)/3600,
               Hours_Data_Unavailable=sum(is.na(Operating_Mode))/3600,
               Min_Temp=min(OA_TempF, na.rm=T),
-              Avg_Temp=mean(OA_TempF, na.rm=T),
+              Median_Temp=median(OA_TempF, na.rm=T),
               Max_Temp=max(OA_TempF, na.rm=T),
-              Avg_RH=mean(OA_RH, na.rm=T)), 
+              Median_RH=median(OA_RH, na.rm=T)), 
   file=paste0(wd, "/Graphs/", sitename, "/Daily_Operation_Summary_", sitename, ".csv"), row.names=F)
 # Print summary site comparison
 print_operating_summary <- function(site){
@@ -1082,6 +1082,7 @@ OperatingModeOAT <- function(site){
   list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode OAT/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
     filter(Site_ID == site) %>%
+    mutate(temp_int = factor(temp_int, levels = unique(temp_int))) %>%
     ggplot(aes(x=temp_int, fill=Operating_Mode, y=Mode_Time)) +
     geom_bar(position="fill", stat="identity") +
     scale_fill_manual(name = "Operating Mode", 
@@ -1206,6 +1207,7 @@ write.csv(df %>%
 HeatCyclingComparison <- function(){
   list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
+    filter(Site_ID != "5539NO") %>%
     gather(key = "Cycle_Length", value = "Cycles_Per_Hour", Long_Cycles:Short_Cycles) %>%
     merge(metadata %>% select(Site_ID, Manufacturer), by="Site_ID", all.x=T, all.y=F) %>%
     mutate(Site_Manufacturer = paste0(Manufacturer, "-", Site_ID)) %>% 
@@ -1240,9 +1242,9 @@ write.csv(df %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
                       Cycle_Count = sum(!is.na(HP_Cycle_Runtimes)),
                       Frequency = sum(!is.na(HP_Cycle_Runtimes))*3600/n(),
-                      Min_Duration = min(HP_Cycle_Runtimes, na.rm=T),
+                      Min_Duration = ifelse(Cycle_Count==0, NA, min(HP_Cycle_Runtimes, na.rm=T)),
                       Median_Duration = median(HP_Cycle_Runtimes, na.rm=T),
-                      Max_Duration = max(HP_Cycle_Runtimes, na.rm=T)),
+                      Max_Duration = ifelse(Cycle_Count==0, NA, max(HP_Cycle_Runtimes, na.rm=T))),
           file=paste0(wd, "/Graphs/Graph Data/Heat Pump Cycling OAT/", sitename, ".csv"),
           row.names=F)
 HeatCyclingOAT <- function(site){
@@ -1292,14 +1294,15 @@ write.csv(df %>%
             filter(HP_Status=="On" & OA_TempF > temp_min & OA_TempF <= temp_max) %>%
             group_by(Site_ID, Date, Hour, minute(Timestamp)) %>%
             summarize(OA_TempF = median(OA_TempF, na.rm=T),
-                      HP_Power = mean(HP_Power, na.rm=T)) %>%
+                      HP_Power = mean(HP_Power, na.rm=T),
+                      Percent_Defrost = sum(Operating_Mode=="Defrost", na.rm=T)/sum(!is.na(Operating_Mode))) %>%
             mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))),
           file=paste0(wd, "/Graphs/Graph Data/Heat Pump Power Variation/", sitename, ".csv"),
           row.names=F)
 HPPowerVariation <- function(site){
   list.files(path = paste0(wd, "/Graphs/Graph Data/Heat Pump Power Variation/"),pattern="*.csv", full.names=T) %>% 
     map_df(~read.csv(.)) %>%
-    filter(Site_ID==site) %>%
+    filter(Site_ID==site & Percent_Defrost < 0.1) %>%
     mutate(temp_int = cut(OA_TempF,breaks=c(-50,-25,-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55))) %>%
     ggplot(aes(x = temp_int)) + 
     geom_boxplot(aes(y = HP_Power)) +
@@ -1575,6 +1578,19 @@ print_heat_capacity <- function(site){
 }
 print_heat_capacity(sitename)
 
+# Copy to clipboard summary of this table for report
+write.table(read.csv(paste0(wd, '/Graphs/Site Comparison/Max Heat Capacity.csv')) %>%
+              mutate(temp_int = factor(temp_int, levels=c("(-20,-15]","(-15,-10]","(-10,-5]","(-5,0]","(0,5]","(5,10]","(10,15]","(15,20]","(20,25]","(25,30]","(30,35]","(35,40]","(40,45]","(45,50]","(50,55]"))) %>%
+              select(Site_ID, temp_int, Max_Capacity) %>%
+              spread(key = temp_int, value = Max_Capacity),
+            "clipboard", sep="\t", row.names = F)
+write.table(read.csv(paste0(wd, '/Graphs/Site Comparison/Max Heat Capacity.csv')) %>%
+              mutate(temp_int = factor(temp_int, levels=c("(-20,-15]","(-15,-10]","(-10,-5]","(-5,0]","(0,5]","(5,10]","(10,15]","(15,20]","(20,25]","(25,30]","(30,35]","(35,40]","(40,45]","(45,50]","(50,55]"))) %>%
+              select(Site_ID, temp_int, Max_HP_Capacity) %>%
+              spread(key = temp_int, value = Max_HP_Capacity),
+            "clipboard", sep="\t", row.names = F)
+
+
 # 6c. Table to show COP in aux only mode as a comparison to the expected 100% efficiency.
   # Hours will need to be multiplied by 5 for NRCan sites
 print_aux_only_cop <- function(site){
@@ -1801,16 +1817,18 @@ COPOAT <- function(site){
     filter(Site_ID==site) %>%
     filter(Percent_System_Off < 0.9) %>%
     mutate(Dominant_Mode = ifelse(Percent_Defrost > 0.05, "Defrost", 
-                                  ifelse(Percent_HP >= Percent_Aux & Percent_HP >= Percent_HP_Aux, "Heat Pump",
-                                         ifelse(Percent_HP_Aux >= Percent_Aux, "Heat Pump + Aux Heat", "Aux Heat")))) %>%
+                           ifelse(Percent_HP >= Percent_Aux & Percent_HP >= Percent_HP_Aux, "Heat Pump",
+                           ifelse(Percent_HP_Aux >= Percent_Aux, "Heat Pump + Aux Heat", "Aux Heat")))) %>%
   ggplot(aes(x = OA_TempF)) + 
     geom_point(aes(y = Total_COP_Heating, color=Dominant_Mode), size=0.8) +
     geom_hline(yintercept = 0) +
-    ylim(0, NA) +
+    ylim(0, 5) +
+    scale_color_manual(name="Dominant Mode",
+                       breaks=c("Heat Pump", "Heat Pump + Aux Heat", "Defrost", "Aux Heat"),
+                       values=c("#009E73","#E69F00","#CC79A7", "coral2")) +
     labs(title=paste0("Hourly COP vs outdoor air temperature for site ", site),
          x="Outdoor Air Temperature (F)",
-         y="COP",
-         color="Dominant Mode") +
+         y="COP") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
