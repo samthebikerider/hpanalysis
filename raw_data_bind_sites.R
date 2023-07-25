@@ -17,18 +17,22 @@ rm(list = ls())
 # packages
 library(tidyverse)
 library(readxl)
+library(data.table)
 
-################variables#######################
+
+
+################ variables #########################
 e350_wd <- "/Volumes/cchpc/raw2/e350/"
 michaels_wd <- "/Volumes/cchpc/raw2/michaels/"
+sites_wd <- "/Volumes/cchpc/raw2/sites/"
 #####################################################
 
 
-################functions############################
+################ functions ##########################
 #####################################################
 
 
-################e350#################################
+################ e350 ###############################
 # 
 # read data
 # setwd("~")
@@ -51,24 +55,29 @@ michaels_wd <- "/Volumes/cchpc/raw2/michaels/"
 #####################################################
 
 
-################michaels#############################
+################ michaels ###########################
 # read data
-setwd("~")
-setwd(michaels_wd)
+setwd("~") # reset wd
+setwd(michaels_wd) # set wd to michaels raw data
 
 michaels_files <- list.files()
-michaels_site_IDs <- unique(substr(michaels_files, 14, 19))
+# michaels_site_IDs <- unique(substr(michaels_files, 14, 19))
+michaels_site_IDs <- c("8220XE", "8726VB", "9944LD")
 
 for (i in michaels_site_IDs){
-  df <- list.files(pattern = i, full.names = T) %>%
-           map_df(~read_csv(.))
-  write_csv(df, paste("~/Volumes/cchpc/raw2/sites/site_", i, ".csv", sep = ""))
-  rm(df)
-  print(paste("site", i, "complete", sep = " "))
+  setwd("~") # reset wd
+  setwd(michaels_wd) # set wd to michaels raw data
+  df <- list.files(path = michaels_wd, pattern = i) %>%
+           map_df(~fread(.)) # read all files for the current site iteration and bind_rows to single df
+  
+  setwd("~") # reset wd
+  setwd(sites_wd) # set wd to sites folder for saving single site file
+  write_csv(df, paste("site_", i, ".csv", sep = "")) # write csv of single file for site
+  
+  rm(df) # remove current df from wd to clear up space
+  print(paste("site", i, "complete", sep = " ")) # message in console to say that a site has been completed
 }
 #####################################################
-
-
 
 
 
