@@ -28,6 +28,12 @@ library(openair)
 ### Data Load and Cleaning ----
 
 # Set working library to read data
+if(Sys.info()[7] == "rose775"){   
+    source("/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/ccHP/hpanalysis/functions_for_use.R") 
+  } else {
+    source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R") 
+}
+
 setwd("Q:/raw2/sites")
 
 
@@ -66,6 +72,9 @@ for (i in site_IDs){
   print(paste("site", i, "loaded, cleaning commencing", sep = " "))
   
   ## Cleaning steps ----
+    # Fill in missing timestamps, if any, with NA data
+  df <- fill_missing_timestamps(df, datetime_UTC, "%F %T", "sec")
+  
   df <- df %>% mutate(
     # Correct RV Volts for before Dec 23 at 6950NE and 8220XE--off by a factor of 10
     reversing_valve_signal_V = ifelse((site_ID == "6950NE" | site_ID == "8220XE") & 
@@ -112,11 +121,9 @@ for (i in site_IDs){
   ## Diagnostics charts and tables ----
   
   # NA Data Summary
-    for(id in unique(df$Site_ID)){
-    write.csv(
+  write.csv(
       df %>%
-        filter(Site_ID==id) %>%
-        group_by(Site_ID, Date, Weekday) %>%
+        group_by(site_ID, date_local, weekday_local) %>%
         summarize(HP_Power_NA = round(sum(is.na(HP_Power))*100/ n(), 1),
                   Aux_Power_NA = round(sum(is.na(Aux_Power))*100/ n(),1),
                   Fan_Power_NA = round(sum(is.na(Fan_Power))*100/ n(),1),
