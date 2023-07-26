@@ -30,24 +30,28 @@ library(openair)
 # Set working library to read data
 if(Sys.info()[7] == "rose775"){   
     source("/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/ccHP/hpanalysis/functions_for_use.R") 
+    wd <- "/Volumes/cchpc/"
+    # Need output wd location ("R:/" for Kevin)
+    # wd_out <- 
   } else {
     source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R") 
+    wd <- "Q:/"
+    wd_out <- "R:/"
 }
 
-setwd("Q:/raw2/sites")
 
 
 
 
 # Read data
-site_IDs <- unique(substr(list.files(), 6, 11))
-metadata <- read_csv(file = "Q:/site-metadata.csv")
+site_IDs <- unique(substr(list.files(path = paste0(wd, "raw2/sites/")), 6, 11))
+metadata <- read_csv(file = paste0(wd, "site-metadata.csv"))
 
 for (i in site_IDs){
   print(paste("beginning site", i, sep = " "))
   
   ## Load data from 'sites' folder ----
-  df <- list.files(pattern = i, full.names = T) %>%
+  df <- list.files(path = paste0(wd, "raw2/sites"), pattern = i, full.names = T) %>%
     map_df(~read_csv(.)) %>%
     mutate(site_ID = i,
            datetime_UTC =  force_tz(index, tzone = "UTC")) %>%
@@ -84,6 +88,7 @@ for (i in site_IDs){
     # Power readings are flipped negative at some sites, need to correct
     fan_pwr_kW = ifelse(fan_pwr_kW < 0, - fan_pwr_kW, fan_pwr_kW),
     AHU_pwr_kW = ifelse(AHU_pwr_kW < 0, - AHU_pwr_kW, AHU_pwr_kW),
+    ODU_pwr_kW = ifelse(ODU_pwr_kW < 0, - ODU_pwr_kW, ODU_pwr_kW),
     auxheat1_pwr_kW = ifelse(auxheat1_pwr_kW < 0, - auxheat1_pwr_kW, auxheat1_pwr_kW),
     auxheat2_pwr_kW = ifelse(auxheat2_pwr_kW < 0, - auxheat2_pwr_kW, auxheat2_pwr_kW),
     auxheat3_pwr_kW = ifelse(auxheat3_pwr_kW < 0, - auxheat3_pwr_kW, auxheat3_pwr_kW),
@@ -104,7 +109,7 @@ for (i in site_IDs){
     # There are some overlaps in data from their data dumps--remove duplicated rows
     distinct(datetime_UTC, ODU_pwr_kW, auxheat_pwr_kW, fan_pwr_kW, .keep_all = T) %>%
     
-    # Some rows have duplicated timestamps with one having NAs for HP_Power or Fan_Power--remove the NAs
+    # Some rows have duplicated timestamps with one having NAs for ODU_pwr_kW or fan_pwr_kW--remove the NAs
       # Arrange will put the NAs last if there are duplicates
     arrange(datetime_UTC, ODU_pwr_kW, fan_pwr_kW) %>% 
     filter(!duplicated(datetime_UTC) | (!is.na(fan_pwr_kW) & !is.na(ODU_pwr_kW)))
@@ -118,24 +123,24 @@ for (i in site_IDs){
   
   print(paste("site", i, "cleaned, commencing diagnostics", sep = " "))
   
+  
   ## Diagnostics charts and tables ----
   
   # NA Data Summary
   write.csv(
       df %>%
         group_by(site_ID, date_local, weekday_local) %>%
-        summarize(HP_Power_NA = round(sum(is.na(HP_Power))*100/ n(), 1),
-                  Aux_Power_NA = round(sum(is.na(Aux_Power))*100/ n(),1),
-                  Fan_Power_NA = round(sum(is.na(Fan_Power))*100/ n(),1),
-                  RV_Volts_NA = round(sum(is.na(RV_Volts))*100/ n(),1),
-                  OA_Temp_NA = round(sum(is.na(OA_TempF))*100/ n(),1),
-                  SA_Temp_NA = round(sum(is.na(SA_TempF))*100/ n(),1),
-                  Duplicated_timestamps = round(sum(duplicated(Timestamp))*2*100/ n(),1),
-                  Duplicated_rows = round((n() - n_distinct(Timestamp, HP_Power, Aux_Power, Fan_Power))*100/ n_distinct(Timestamp, HP_Power, Aux_Power, Fan_Power),1),
-                  Data_missing = round(100 - (n() - sum(duplicated(Timestamp)))*100/ 86400, 1)),
-      file=paste0(wd, "/Graphs/", id, "/Missing_Power_Data_Summary_", id, ".csv"),
+        summarize(ODU_pwr_kW_NA = round(sum(is.na(ODU_pwr_kW))*100/ n(), 1),
+                  auxheat_pwr_kW_NA = round(sum(is.na(auxheat_pwr_kW))*100/ n(),1),
+                  fan_pwr_kW_NA = round(sum(is.na(fan_pwr_kW))*100/ n(),1),
+                  reversing_valve_signal_V_NA = round(sum(is.na(reversing_valve_signal_V))*100/ n(),1),
+                  OA_Temp_NA = round(sum(is.na(OA_temp_F))*100/ n(),1),
+                  SA_Temp_NA = round(sum(is.na(SA_temp_F))*100/ n(),1),
+                  Duplicated_timestamps = round(sum(duplicated(datetime_UTC))*2*100/ n(),1),
+                  Data_missing = round(100 - (n() - sum(duplicated(datetime_UTC)))*100/ 86400, 1)),
+      file=paste0(wd_out, "daily_ops/", id, "/Missing_Power_Data_Summary_", id, ".csv"),
       row.names=F)
-  }
+
   
   
   
@@ -147,10 +152,11 @@ for (i in site_IDs){
   df_1m <- timeAverage(df, avg.time = "minute", data.thresh = 75, statistic = "mean")
   df_5m <- timeAverage(df, avg.time = "5 minute", data.thresh = 75, statistic = "mean")
   
-  write_csv(df_1h, paste("Q:/clean/1_hour/", i, ".csv", sep = ""))
-  write_csv(df_1m, paste("Q:/clean/1_min/", i, ".csv", sep = ""))
-  write_csv(df, paste("Q:/clean/1_sec/", i, ".csv", sep = ""))
-  write_csv(df_5m, paste("Q:/clean/5_min/", i, ".csv", sep = ""))
+  write_csv(df_1h, paste0(wd, "clean/1_hour/", i, ".csv"))
+  write_csv(df_1m, paste0(wd, "clean/1_min/", i, ".csv"))
+  write_csv(df, paste0(wd, "clean/1_sec/", i, ".csv"))
+  write_csv(df_5m, paste0(wd, "clean/5_min/", i, ".csv"))
+  
   rm(df, df_1h, df_1m, df_5m)
   
   
@@ -175,19 +181,19 @@ RoomTempTimeSeries <- function(interval, timestart, timeend){
   # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be 60 minutes/1 hour.
   # The time start and end should be a date string in format for example "4/01/2022 0:00".
-  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==sitename]),
-                Interval = minute(Timestamp) %/% interval) %>% 
+  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==sitename]),
+                Interval = minute(datetime_UTC) %/% interval) %>% 
     filter(Site_ID == sitename &
-             Timestamp >= strptime(timestart,"%F %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename]) &
-             Timestamp <= strptime(timeend,"%F %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename])) %>%
+             datetime_UTC >= strptime(timestart,"%F %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename]) &
+             datetime_UTC <= strptime(timeend,"%F %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename])) %>%
     group_by(Site_ID, Date, Hour, Interval) %>% 
-    summarize(Timestamp = Timestamp[1],
+    summarize(datetime_UTC = datetime_UTC[1],
               Room1_TempF = mean(Room1_TempF,na.rm=T),
               Room2_TempF = mean(Room2_TempF,na.rm=T),
               Room3_TempF = mean(Room3_TempF,na.rm=T),
               Room4_TempF = mean(Room4_TempF,na.rm=T),
               AHU_TempF = mean(AHU_TempF,na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    ggplot(aes(x=as.POSIXct(datetime_UTC))) +
     geom_line(aes(y=Room1_TempF, color = "Room 1"),size=0.5) + 
     geom_line(aes(y=Room2_TempF, color = "Room 2"),size=0.5) +
     geom_line(aes(y=Room3_TempF, color = "Room 3"),size=0.5) +
@@ -219,18 +225,18 @@ SupplyTempTimeSeries <- function(interval, timestart, timeend){
   # Look at a time series graph for the four supply temperature monitors, time interval (e.g, 5-minute), time period, and site
   # Interval is in units of minutes, and so the maximum interval would be 60 minutes/1 hour.
   # The time start and end should be a date string in format for example "4/01/2022 0:00".
-  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==sitename]),
-                Interval = minute(Timestamp) %/% interval) %>% 
+  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==sitename]),
+                Interval = minute(datetime_UTC) %/% interval) %>% 
     filter(Site_ID == sitename &
-             Timestamp >= strptime(timestart,"%F %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename]) &
-             Timestamp <= strptime(timeend,"%F %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename])) %>%
+             datetime_UTC >= strptime(timestart,"%F %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename]) &
+             datetime_UTC <= strptime(timeend,"%F %H:%M", tz=metadata$Timezone[metadata$Site_ID==sitename])) %>%
     group_by(Site_ID, Date, Hour, Interval) %>% 
-    summarize(Timestamp = Timestamp[1],
+    summarize(datetime_UTC = datetime_UTC[1],
               SA1_TempF = mean(SA1_TempF,na.rm=T),
               SA2_TempF = mean(SA2_TempF,na.rm=T),
               SA3_TempF = mean(SA3_TempF,na.rm=T),
               SA4_TempF = mean(SA4_TempF,na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(Timestamp))) +
+    ggplot(aes(x=as.POSIXct(datetime_UTC))) +
     geom_line(aes(y=SA1_TempF, color = "SA1"),size=0.5) + 
     geom_line(aes(y=SA2_TempF, color = "SA2"),size=0.5) + 
     geom_line(aes(y=SA3_TempF, color = "SA3"),size=0.5) + 
@@ -260,16 +266,16 @@ ggsave(paste0(sitename, '_Supply_Temperature_Comparison.png'),
 # Power time series comparison chart with OAT and SAT
 OperationTimeSeries <- function(site, timestart, timeend){
   # The time start and end should be character with format "%Y-%m-%d".
-  df %>% mutate(Timestamp = Timestamp %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
     filter(Site_ID == site &
-             Timestamp >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
-             Timestamp <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-    ggplot(aes(x=as.POSIXct(Timestamp))) +
-    geom_line(aes(y=OA_TempF/5, color = "Outdoor Air Temperature"),size=0.3) + 
-    geom_line(aes(y=SA_TempF/5, color = "Supply Air Temperature"),size=0.3) +
-    geom_line(aes(y=HP_Power, color = "Outdoor Unit Power"),size=0.3) + 
-    geom_line(aes(y=Fan_Power, color = "Supply Fan Power"),size=0.3) +
-    geom_line(aes(y=Aux_Power, color = "Auxiliary Power"),size=0.3) + 
+             datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
+             datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
+    ggplot(aes(x=as.POSIXct(datetime_UTC))) +
+    geom_line(aes(y=OA_temp_F/5, color = "Outdoor Air Temperature"),size=0.3) + 
+    geom_line(aes(y=SA_temp_F/5, color = "Supply Air Temperature"),size=0.3) +
+    geom_line(aes(y=ODU_pwr_kW, color = "Outdoor Unit Power"),size=0.3) + 
+    geom_line(aes(y=fan_pwr_kW, color = "Supply Fan Power"),size=0.3) +
+    geom_line(aes(y=auxheat_pwr_kW, color = "Auxiliary Power"),size=0.3) + 
     scale_y_continuous(name = "Power (kW)",
                        limits = c(-4, 25),
                        sec.axis = sec_axis(~.*5, name ="Temperature (F)")) +
