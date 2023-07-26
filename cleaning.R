@@ -25,11 +25,47 @@ library(data.table)
 
 ### Data Load and Cleaning ----
 
-# Set working library
-wd <- "Q:/raw2/sites"
+# Set working library to read data
+setwd("Q:/raw2/sites")
+
+
+
 
 # Read data
-read_plus_michaels <- function(file) {fread(file) %>% 
+site_IDs <- unique(substr(list.files(), 6, 11))
+
+# for (i in site_IDs){
+  i = "6950NE"
+  df <- list.files(pattern = i, full.names = T) %>%
+    map_df(~read_csv(.)) %>%
+    rename(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
+    AHU_pwr_kW = "AHU_Power", auxheat_pwr_kW = "Aux_Power",
+    OA_temp_F = "OA_TempF", 
+    SA_temp_duct1_F = "SA1_TempF", SA_RH_duct1 = "SA1_RH",
+    SA_temp_duct2_F = "SA2_TempF", SA_RH_duct2 = "SA2_RH",
+    SA_temp_duct3_F = "SA3_TempF", SA_RH_duct3 = "SA3_RH",
+    SA_temp_duct4_F = "SA4_TempF", SA_RH_duct4 = "SA4_RH",
+    RA_temp_F = "RA_TempF",
+    AHU_ambient_temp_F = "AHU_TempF", AHU_ambient_RH = "AHU_RH",
+    room1_temp_F = "Room1_TempF", room1_RH = "Room1_RH",
+    room2_temp_F = "Room2_TempF", room2_RH = "Room2_RH",
+    room3_temp_F = "Room3_TempF", room3_RH = "Room3_RH",
+    room4_temp_F = "Room4_TempF", room4_RH = "Room4_RH",
+    reversing_valve_signal_V = "RV_Volts",
+    datetime_UTC = "date")
+  
+  
+  
+  
+  # write_csv(df_1h, paste("Q:/clean/1_hour/", i, ".csv", sep = ""))
+  # write_csv(df_1m, paste("Q:/clean/1_min/", i, ".csv", sep = ""))
+  # write_csv(df_1s, paste("Q:/clean/1_sec/", i, ".csv", sep = ""))
+  # write_csv(df_5m, paste("Q:/clean/5_min/", i, ".csv", sep = ""))
+  # rm(df, df_1h, df_1m, df_1s, df_5m)
+  # print(paste("site", i, "complete", sep = " "))
+# }
+  
+  read_plus_michaels <- function(file) {fread(file) %>% 
     select(index, RV_Volts, HP_Power, Fan_Power, AHU_Power, Aux1_Power, Aux2_Power, 
            Aux3_Power, Aux4_Power, OA_TempF, OA_RH, SA1_TempF, SA2_TempF, SA1_RH, 
            SA2_RH, RA_TempF, RA_RH, AHU_TempF, AHU_RH, Room1_TempF, Room1_RH, Room2_TempF, 

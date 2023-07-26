@@ -16,6 +16,12 @@ wd <- "C:/Users/keen930/PNNL/CCHP - Project Management - Project Management/Data
 # wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/Project Management/Data Analysis"
 
 # Read data
+df <- read.csv('C:/Users/keen930/PNNL/CCHP - Project Management - Project Management/Data Analysis/Raw Data/7083LM.csv') %>%
+  mutate(Timestamp = strptime(Timestamp, "%m/%d/%Y %H:%M", tz="US/Eastern"),
+         Site_ID = "7083LM",
+         Total_Power = HP_Power + Fan_Power + Aux_Power) %>%
+  filter(!is.na(Timestamp))
+
   # Read_csv (tidyverse) is crashing RStudio, trying fread (data.table) which is 
   # supposed to be better with large files
 read_plus_michaels <- function(file) {fread(file) %>% 
@@ -341,7 +347,9 @@ df <- df %>% mutate(
 df <- df %>% mutate(Operating_Mode = 
   # 1. Identify defrost mode                      
       # For Michaels sites, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
+      # NOTE: It looks like site 7083LM, greater than 20V means heating mode, and between 0.4 and 0.6V is system off, and 0.8 to 1.1V might be defrost
     ifelse(Site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB") & RV_Volts > 25 & HP_Power > 0.1, "Defrost",
+    ifelse(Site_ID == "7083LM" & RV_Volts > 0.8 & RV_Volts < 1.1 & HP_Power > 0.1, "Defrost", 
       # For site 4228VB, Trane provided RV data but there are some gaps which require secondary indicators
     ifelse(Site_ID == "4228VB" & 
              (Timestamp >= strptime("2023-01-16", "%F", tz="US/Mountain") & Timestamp <= strptime("2023-01-30","%F",tz="US/Mountain") |
@@ -358,7 +366,7 @@ df <- df %>% mutate(Operating_Mode =
     ifelse(HP_Power > 0.1 & Aux_Power < 0.1, "Heating-HP Only",
          ifelse(HP_Power < 0.1 & Aux_Power > 0.1, "Heating-Aux Only",
                 ifelse(HP_Power > 0.1 & Aux_Power > 0.1, "Heating-Aux/HP",
-                       "System Off")))))))))) %>%
+                       "System Off"))))))))))) %>%
   # 3. If Fan_Power is NA, make operating mode NA, because we don't want to evaluate 
     # time periods with key parameters missing.
   mutate(Operating_Mode=ifelse(is.na(Fan_Power), NA, Operating_Mode)) %>%
@@ -366,7 +374,7 @@ df <- df %>% mutate(Operating_Mode =
   # 4. Correct for cooling mode
   mutate(Operating_Mode=ifelse(
     # Michaels sites
-    Site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB") & Operating_Mode=="Defrost" & Aux_Power < 0.1 & OA_TempF > 60,
+    Site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB", "7083LM") & Operating_Mode=="Defrost" & Aux_Power < 0.1 & OA_TempF > 60,
            "Cooling", Operating_Mode))
 
 ## Remove data before data stabilizes for each site.
@@ -662,7 +670,7 @@ TimeSeries <- function(parameter, interval, timestart, timeend){
           panel.border = element_rect(colour = "black",fill=NA)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
-# TimeSeries("6112OH", "HP_Power", 1,  "2023-02-14 6:00", "2023-02-14 17:00")
+# TimeSeries("7083LM", "RV_Volts", 1,  "2023-02-15 6:00", "2023-02-120 17:00")
 
 
 # Investigate NA values for any variable
