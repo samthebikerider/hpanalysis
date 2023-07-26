@@ -21,6 +21,8 @@ library(tidyverse)
 library(lubridate)
 library(stringr)
 library(data.table)
+library(openair)
+
 
 
 ### Data Load and Cleaning ----
@@ -35,11 +37,10 @@ setwd("Q:/raw2/sites")
 site_IDs <- unique(substr(list.files(), 6, 11))
 metadata <- read_csv(file = "Q:/site-metadata.csv")
 
-# for (i in site_IDs){
-  i = "6950NE"
+for (i in site_IDs){
   df <- list.files(pattern = i, full.names = T) %>%
     map_df(~read_csv(.)) %>%
-    mutate(site_ID = substr(file, nchar(file)-20,nchar(file)-15),
+    mutate(site_ID = i,
            datetime_UTC =  force_tz(index, tzone = "UTC")) %>%
     rename(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
             AHU_pwr_kW = "AHU_Power", 
@@ -72,9 +73,12 @@ metadata <- read_csv(file = "Q:/site-metadata.csv")
     auxheat3_pwr_kW = ifelse(auxheat3_pwr_kW < 0, - auxheat3_pwr_kW, auxheat3_pwr_kW),
     auxheat4_pwr_kW = ifelse(auxheat4_pwr_kW < 0, - auxheat4_pwr_kW, auxheat4_pwr_kW),
     
-    # Create auxheat_pwr_kW as sum of individual legs (rowSums defaults to zero if all NA I think, so need to force to NA)
+    # Create auxheat_pwr_kW as sum of individual legs (rowSums defaults to zero if all NA, so need to force to NA)
     auxheat_pwr_kW = ifelse(is.na(auxheat1_pwr_kW) & is.na(auxheat2_pwr_kW) & is.na(auxheat3_pwr_kW) & is.na(auxheat4_pwr_kW), NA,
                        rowSums(cbind(auxheat1_pwr_kW, auxheat2_pwr_kW, auxheat3_pwr_kW, auxheat4_pwr_kW), na.rm=T)),
+    # Create HP_system_pwr_kW as sum of all powers (rowSums defaults to zero if all NA)
+    HP_system_pwr_kW = ifelse(is.na(ODU_pwr_kW) & is.na(fan_pwr_kW) & is.na(auxheat_pwr_kW), NA,
+                              rowSums(cbind(ODU_pwr_kW, fan_pwr_kW, auxheat_pwr_kW), na.rm=T)),
     
     # Create SA_RH and SA_temp_F as sum of four sensors, rowMeans does not default to 0 if all NA
     SA_RH = rowMeans(cbind(SA_RH_duct1, SA_RH_duct2, SA_RH_duct3, SA_RH_duct4), na.rm=T),
@@ -95,13 +99,19 @@ metadata <- read_csv(file = "Q:/site-metadata.csv")
                         hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
                         weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T))
   
-  # write_csv(df_1h, paste("Q:/clean/1_hour/", i, ".csv", sep = ""))
-  # write_csv(df_1m, paste("Q:/clean/1_min/", i, ".csv", sep = ""))
-  # write_csv(df_1s, paste("Q:/clean/1_sec/", i, ".csv", sep = ""))
-  # write_csv(df_5m, paste("Q:/clean/5_min/", i, ".csv", sep = ""))
-  # rm(df, df_1h, df_1m, df_1s, df_5m)
-  # print(paste("site", i, "complete", sep = " "))
-# }
+  
+  
+  df_1h <- timeAverage(df, avg.time = "hour", data.thresh = 75, statistic = "mean")
+  df_1m <- timeAverage(df, avg.time = "minute", data.thresh = 75, statistic = "mean")
+  df_5m <- timeAverage(df, avg.time = "5 minute", data.thresh = 75, statistic = "mean")
+  
+  write_csv(df_1h, paste("Q:/clean/1_hour/", i, ".csv", sep = ""))
+  write_csv(df_1m, paste("Q:/clean/1_min/", i, ".csv", sep = ""))
+  write_csv(df, paste("Q:/clean/1_sec/", i, ".csv", sep = ""))
+  write_csv(df_5m, paste("Q:/clean/5_min/", i, ".csv", sep = ""))
+  rm(df, df_1h, df_1m, df_5m)
+  print(paste("site", i, "complete", sep = " "))
+}
   
 
   
