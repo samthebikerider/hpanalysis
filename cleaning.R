@@ -38,6 +38,9 @@ site_IDs <- unique(substr(list.files(), 6, 11))
 metadata <- read_csv(file = "Q:/site-metadata.csv")
 
 for (i in site_IDs){
+  print(paste("beginning site", i, sep = " "))
+  
+  ## Load data from 'sites' folder ----
   df <- list.files(pattern = i, full.names = T) %>%
     map_df(~read_csv(.)) %>%
     mutate(site_ID = i,
@@ -59,6 +62,10 @@ for (i in site_IDs){
             room4_temp_F = "Room4_TempF", room4_RH = "Room4_RH",
             reversing_valve_signal_V = "RV_Volts")
   
+  
+  print(paste("site", i, "loaded, cleaning commencing", sep = " "))
+  
+  ## Cleaning steps ----
   df <- df %>% mutate(
     # Correct RV Volts for before Dec 23 at 6950NE and 8220XE--off by a factor of 10
     reversing_valve_signal_V = ifelse((site_ID == "6950NE" | site_ID == "8220XE") & 
@@ -100,24 +107,12 @@ for (i in site_IDs){
                         weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T))
   
   
+  print(paste("site", i, "cleaned, commencing diagnostics", sep = " "))
   
-  df_1h <- timeAverage(df, avg.time = "hour", data.thresh = 75, statistic = "mean")
-  df_1m <- timeAverage(df, avg.time = "minute", data.thresh = 75, statistic = "mean")
-  df_5m <- timeAverage(df, avg.time = "5 minute", data.thresh = 75, statistic = "mean")
+  ## Diagnostics charts and tables ----
   
-  write_csv(df_1h, paste("Q:/clean/1_hour/", i, ".csv", sep = ""))
-  write_csv(df_1m, paste("Q:/clean/1_min/", i, ".csv", sep = ""))
-  write_csv(df, paste("Q:/clean/1_sec/", i, ".csv", sep = ""))
-  write_csv(df_5m, paste("Q:/clean/5_min/", i, ".csv", sep = ""))
-  rm(df, df_1h, df_1m, df_5m)
-  print(paste("site", i, "complete", sep = " "))
-}
-  
-
-  
-  ### NA Data Summary ----
-  
-  for(id in unique(df$Site_ID)){
+  # NA Data Summary
+    for(id in unique(df$Site_ID)){
     write.csv(
       df %>%
         filter(Site_ID==id) %>%
@@ -134,6 +129,35 @@ for (i in site_IDs){
       file=paste0(wd, "/Graphs/", id, "/Missing_Power_Data_Summary_", id, ".csv"),
       row.names=F)
   }
+  
+  
+  
+  
+  
+  print(paste("site", i, "diagnosted completed, printing aggregated files", sep = " "))
+  
+  df_1h <- timeAverage(df, avg.time = "hour", data.thresh = 75, statistic = "mean")
+  df_1m <- timeAverage(df, avg.time = "minute", data.thresh = 75, statistic = "mean")
+  df_5m <- timeAverage(df, avg.time = "5 minute", data.thresh = 75, statistic = "mean")
+  
+  write_csv(df_1h, paste("Q:/clean/1_hour/", i, ".csv", sep = ""))
+  write_csv(df_1m, paste("Q:/clean/1_min/", i, ".csv", sep = ""))
+  write_csv(df, paste("Q:/clean/1_sec/", i, ".csv", sep = ""))
+  write_csv(df_5m, paste("Q:/clean/5_min/", i, ".csv", sep = ""))
+  rm(df, df_1h, df_1m, df_5m)
+  
+  
+  
+  ### 
+  
+  
+  
+  print(paste("site", i, "complete", sep = " "))
+}
+  
+
+  
+  ##
   
   
   ### Time Series Daily Investigation Plots ----
