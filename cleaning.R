@@ -55,7 +55,7 @@ for (i in site_IDs){
     map_df(~read_csv(.)) %>%
     mutate(site_ID = i,
            datetime_UTC =  force_tz(index, tzone = "UTC")) %>%
-    rename(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
+    rename(any_of(c(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
             AHU_pwr_kW = "AHU_Power", 
             auxheat1_pwr_kW = "Aux1_Power", auxheat2_pwr_kW = "Aux2_Power", 
             auxheat3_pwr_kW = "Aux3_Power", auxheat4_pwr_kW = "Aux4_Power",
@@ -70,14 +70,14 @@ for (i in site_IDs){
             room2_temp_F = "Room2_TempF", room2_RH = "Room2_RH",
             room3_temp_F = "Room3_TempF", room3_RH = "Room3_RH",
             room4_temp_F = "Room4_TempF", room4_RH = "Room4_RH",
-            reversing_valve_signal_V = "RV_Volts")
+            reversing_valve_signal_V = "RV_Volts")))
   
   
   print(paste("site", i, "loaded, cleaning commencing", sep = " "))
   
   ## Cleaning steps ----
     # Fill in missing timestamps, if any, with NA data
-  df <- fill_missing_timestamps(df, datetime_UTC, "%F %T", "sec")
+  df <- fill_missing_timestamps(df, df$datetime_UTC, "%F %T", "sec")
   
   df <- df %>% mutate(
     # Correct RV Volts for before Dec 23 at 6950NE and 8220XE--off by a factor of 10
