@@ -55,10 +55,20 @@ for (i in site_IDs){
     map_df(~read_csv(.)) %>%
     mutate(site_ID = i,
            datetime_UTC =  force_tz(index, tzone = "UTC")) %>%
+    
+    ## Remove the select once Sam puts this in his script ##
+    select(any_of(c("datetime_UTC", "site_ID", "index", "HP_Power", "Fan_Power", "AHU_Power", "Aux_Power",
+           "OA_TempF", "OA_RH",
+           "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",
+           "SA4_TempF", "SA4_RH", "RA_TempF", "RA_RH", "AHU_TempF", "AHU_RH",
+           "Room1_TempF", "Room1_RH","Room2_TempF", "Room2_RH", "Room3_TempF",
+           "Room3_RH", "Room4_TempF", "Room4_RH", "RV_Volts"))) %>% 
+    select(-index) %>%
     rename(any_of(c(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
             AHU_pwr_kW = "AHU_Power", 
             auxheat1_pwr_kW = "Aux1_Power", auxheat2_pwr_kW = "Aux2_Power", 
             auxheat3_pwr_kW = "Aux3_Power", auxheat4_pwr_kW = "Aux4_Power",
+            auxheat_pwr_kW = "Aux_Power", 
             OA_temp_F = "OA_TempF", 
             SA_temp_duct1_F = "SA1_TempF", SA_RH_duct1 = "SA1_RH",
             SA_temp_duct2_F = "SA2_TempF", SA_RH_duct2 = "SA2_RH",
@@ -70,14 +80,17 @@ for (i in site_IDs){
             room2_temp_F = "Room2_TempF", room2_RH = "Room2_RH",
             room3_temp_F = "Room3_TempF", room3_RH = "Room3_RH",
             room4_temp_F = "Room4_TempF", room4_RH = "Room4_RH",
-            reversing_valve_signal_V = "RV_Volts")))
+            reversing_valve_signal_V = "RV_Volts"))) 
   
   
   print(paste("site", i, "loaded, cleaning commencing", sep = " "))
   
   ## Cleaning steps ----
     # Fill in missing timestamps, if any, with NA data
-  df <- fill_missing_timestamps(df, df$datetime_UTC, "%F %T", "sec")
+  summary(df$datetime_UTC)
+  df <- fill_missing_timestamps(df, "datetime_UTC", "%F %T", "sec") %>% select(-timestamp)
+  summary(df$datetime_UTC)
+  
   
   df <- df %>% mutate(
     # Correct RV Volts for before Dec 23 at 6950NE and 8220XE--off by a factor of 10
@@ -89,14 +102,17 @@ for (i in site_IDs){
     fan_pwr_kW = ifelse(fan_pwr_kW < 0, - fan_pwr_kW, fan_pwr_kW),
     AHU_pwr_kW = ifelse(AHU_pwr_kW < 0, - AHU_pwr_kW, AHU_pwr_kW),
     ODU_pwr_kW = ifelse(ODU_pwr_kW < 0, - ODU_pwr_kW, ODU_pwr_kW),
-    auxheat1_pwr_kW = ifelse(auxheat1_pwr_kW < 0, - auxheat1_pwr_kW, auxheat1_pwr_kW),
-    auxheat2_pwr_kW = ifelse(auxheat2_pwr_kW < 0, - auxheat2_pwr_kW, auxheat2_pwr_kW),
-    auxheat3_pwr_kW = ifelse(auxheat3_pwr_kW < 0, - auxheat3_pwr_kW, auxheat3_pwr_kW),
-    auxheat4_pwr_kW = ifelse(auxheat4_pwr_kW < 0, - auxheat4_pwr_kW, auxheat4_pwr_kW),
+    
+    ## Add these back once Sam adds the aux unit powers in his script ##
+    # auxheat1_pwr_kW = ifelse(auxheat1_pwr_kW < 0, - auxheat1_pwr_kW, auxheat1_pwr_kW),
+    # auxheat2_pwr_kW = ifelse(auxheat2_pwr_kW < 0, - auxheat2_pwr_kW, auxheat2_pwr_kW),
+    # auxheat3_pwr_kW = ifelse(auxheat3_pwr_kW < 0, - auxheat3_pwr_kW, auxheat3_pwr_kW),
+    # auxheat4_pwr_kW = ifelse(auxheat4_pwr_kW < 0, - auxheat4_pwr_kW, auxheat4_pwr_kW),
     
     # Create auxheat_pwr_kW as sum of individual legs (rowSums defaults to zero if all NA, so need to force to NA)
-    auxheat_pwr_kW = ifelse(is.na(auxheat1_pwr_kW) & is.na(auxheat2_pwr_kW) & is.na(auxheat3_pwr_kW) & is.na(auxheat4_pwr_kW), NA,
-                       rowSums(cbind(auxheat1_pwr_kW, auxheat2_pwr_kW, auxheat3_pwr_kW, auxheat4_pwr_kW), na.rm=T)),
+    ## Add this back, or remove if it is already in Sam's script ##
+    # auxheat_pwr_kW = ifelse(is.na(auxheat1_pwr_kW) & is.na(auxheat2_pwr_kW) & is.na(auxheat3_pwr_kW) & is.na(auxheat4_pwr_kW), NA,
+    #                    rowSums(cbind(auxheat1_pwr_kW, auxheat2_pwr_kW, auxheat3_pwr_kW, auxheat4_pwr_kW), na.rm=T)),
     # Create HP_system_pwr_kW as sum of all powers (rowSums defaults to zero if all NA)
     HP_system_pwr_kW = ifelse(is.na(ODU_pwr_kW) & is.na(fan_pwr_kW) & is.na(auxheat_pwr_kW), NA,
                               rowSums(cbind(ODU_pwr_kW, fan_pwr_kW, auxheat_pwr_kW), na.rm=T)),
@@ -138,7 +154,7 @@ for (i in site_IDs){
                   SA_Temp_NA = round(sum(is.na(SA_temp_F))*100/ n(),1),
                   Duplicated_timestamps = round(sum(duplicated(datetime_UTC))*2*100/ n(),1),
                   Data_missing = round(100 - (n() - sum(duplicated(datetime_UTC)))*100/ 86400, 1)),
-      file=paste0(wd_out, "daily_ops/", id, "/Missing_Power_Data_Summary_", id, ".csv"),
+      file=paste0(wd_out, "daily_ops/", id, "/Missing_Power_Data_Summary.csv"),
       row.names=F)
 
   
@@ -148,16 +164,16 @@ for (i in site_IDs){
   
   print(paste("site", i, "diagnosted completed, printing aggregated files", sep = " "))
   
-  df_1h <- timeAverage(df, avg.time = "hour", data.thresh = 75, statistic = "mean")
-  df_1m <- timeAverage(df, avg.time = "minute", data.thresh = 75, statistic = "mean")
-  df_5m <- timeAverage(df, avg.time = "5 minute", data.thresh = 75, statistic = "mean")
+  df_1h <- timeAverage(df %>% rename(date = datetime_UTC), avg.time = "hour", data.thresh = 75, statistic = "mean")
+  df_1m <- timeAverage(df %>% rename(date = datetime_UTC), avg.time = "minute", data.thresh = 75, statistic = "mean")
+  df_5m <- timeAverage(df %>% rename(date = datetime_UTC), avg.time = "5 minute", data.thresh = 75, statistic = "mean")
   
   write_csv(df_1h, paste0(wd, "clean/1_hour/", i, ".csv"))
   write_csv(df_1m, paste0(wd, "clean/1_min/", i, ".csv"))
   write_csv(df, paste0(wd, "clean/1_sec/", i, ".csv"))
   write_csv(df_5m, paste0(wd, "clean/5_min/", i, ".csv"))
   
-  rm(df, df_1h, df_1m, df_5m)
+  rm(df, df_1h, df_1m, df_5m, timezone)
   
   
   
