@@ -87,10 +87,10 @@ for (i in site_IDs){
   
   ## Cleaning steps ----
     # Fill in missing timestamps, if any, with NA data
-  summary(df$datetime_UTC)
-  df <- fill_missing_timestamps(df, "datetime_UTC", "%F %T", "sec") %>% select(-timestamp)
-  summary(df$datetime_UTC)
-  
+  df <- fill_missing_timestamps(df, "datetime_UTC", "%F %T", "sec") %>% select(-timestamp) %>%
+    # Not sure why, but it is creating 1 NA timestamp
+    filter(!is.na(datetime_UTC))
+
   
   df <- df %>% mutate(
     # Correct RV Volts for before Dec 23 at 6950NE and 8220XE--off by a factor of 10
@@ -154,7 +154,7 @@ for (i in site_IDs){
                   SA_Temp_NA = round(sum(is.na(SA_temp_F))*100/ n(),1),
                   Duplicated_timestamps = round(sum(duplicated(datetime_UTC))*2*100/ n(),1),
                   Data_missing = round(100 - (n() - sum(duplicated(datetime_UTC)))*100/ 86400, 1)),
-      file=paste0(wd_out, "daily_ops/", id, "/Missing_Power_Data_Summary.csv"),
+      file=paste0(wd_out, "daily_ops/", i, "/Missing_Power_Data_Summary.csv"),
       row.names=F)
 
   
@@ -164,14 +164,15 @@ for (i in site_IDs){
   
   print(paste("site", i, "diagnosted completed, printing aggregated files", sep = " "))
   
-  df_1h <- timeAverage(df %>% rename(date = datetime_UTC), avg.time = "hour", data.thresh = 75, statistic = "mean")
-  df_1m <- timeAverage(df %>% rename(date = datetime_UTC), avg.time = "minute", data.thresh = 75, statistic = "mean")
-  df_5m <- timeAverage(df %>% rename(date = datetime_UTC), avg.time = "5 minute", data.thresh = 75, statistic = "mean")
+  df_1h <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "hour", data.thresh = 75, statistic = "mean")
+  df_1m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "min", data.thresh = 75, statistic = "mean")
+  df_5m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "5 min", data.thresh = 75, statistic = "mean")
   
   write_csv(df_1h, paste0(wd, "clean/1_hour/", i, ".csv"))
-  write_csv(df_1m, paste0(wd, "clean/1_min/", i, ".csv"))
-  write_csv(df, paste0(wd, "clean/1_sec/", i, ".csv"))
   write_csv(df_5m, paste0(wd, "clean/5_min/", i, ".csv"))
+  write_csv(df_1m, paste0(wd, "clean/1_min/", i, ".csv"))
+  ## Temporary, just write part of the df for the one-second to save some time for now ##
+  write_csv(df[nrow(df)*2/3:nrow(df),], paste0(wd, "clean/1_sec/", i, ".csv"))
   
   rm(df, df_1h, df_1m, df_5m, timezone)
   
