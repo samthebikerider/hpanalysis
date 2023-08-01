@@ -58,11 +58,11 @@ for (i in site_IDs){
     
     ## Remove the select once Sam puts this in his script ##
     select(any_of(c("datetime_UTC", "site_ID", "index", "HP_Power", "Fan_Power", "AHU_Power", "Aux_Power",
-           "OA_TempF", "OA_RH",
-           "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",
-           "SA4_TempF", "SA4_RH", "RA_TempF", "RA_RH", "AHU_TempF", "AHU_RH",
-           "Room1_TempF", "Room1_RH","Room2_TempF", "Room2_RH", "Room3_TempF",
-           "Room3_RH", "Room4_TempF", "Room4_RH", "RV_Volts"))) %>% 
+                    "OA_TempF", "OA_RH", "Aux1_Power", "Aux2_Power", "Aux3_Power","Aux4_Power",
+                    "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",
+                    "SA4_TempF", "SA4_RH", "RA_TempF", "RA_RH", "AHU_TempF", "AHU_RH",
+                    "Room1_TempF", "Room1_RH","Room2_TempF", "Room2_RH", "Room3_TempF",
+                    "Room3_RH", "Room4_TempF", "Room4_RH", "RV_Volts"))) %>%
     select(-index) %>%
     rename(any_of(c(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
             AHU_pwr_kW = "AHU_Power", 
@@ -103,16 +103,15 @@ for (i in site_IDs){
     AHU_pwr_kW = ifelse(AHU_pwr_kW < 0, - AHU_pwr_kW, AHU_pwr_kW),
     ODU_pwr_kW = ifelse(ODU_pwr_kW < 0, - ODU_pwr_kW, ODU_pwr_kW),
     
-    ## Add these back once Sam adds the aux unit powers in his script ##
-    # auxheat1_pwr_kW = ifelse(auxheat1_pwr_kW < 0, - auxheat1_pwr_kW, auxheat1_pwr_kW),
-    # auxheat2_pwr_kW = ifelse(auxheat2_pwr_kW < 0, - auxheat2_pwr_kW, auxheat2_pwr_kW),
-    # auxheat3_pwr_kW = ifelse(auxheat3_pwr_kW < 0, - auxheat3_pwr_kW, auxheat3_pwr_kW),
-    # auxheat4_pwr_kW = ifelse(auxheat4_pwr_kW < 0, - auxheat4_pwr_kW, auxheat4_pwr_kW),
+    ## One site at least doesn't have a fourth aux -- will need to create it manually ##
+    auxheat1_pwr_kW = ifelse(auxheat1_pwr_kW < 0, - auxheat1_pwr_kW, auxheat1_pwr_kW),
+    auxheat2_pwr_kW = ifelse(auxheat2_pwr_kW < 0, - auxheat2_pwr_kW, auxheat2_pwr_kW),
+    auxheat3_pwr_kW = ifelse(auxheat3_pwr_kW < 0, - auxheat3_pwr_kW, auxheat3_pwr_kW),
+    auxheat4_pwr_kW = ifelse(auxheat4_pwr_kW < 0, - auxheat4_pwr_kW, auxheat4_pwr_kW),
     
     # Create auxheat_pwr_kW as sum of individual legs (rowSums defaults to zero if all NA, so need to force to NA)
-    ## Add this back, or remove if it is already in Sam's script ##
-    # auxheat_pwr_kW = ifelse(is.na(auxheat1_pwr_kW) & is.na(auxheat2_pwr_kW) & is.na(auxheat3_pwr_kW) & is.na(auxheat4_pwr_kW), NA,
-    #                    rowSums(cbind(auxheat1_pwr_kW, auxheat2_pwr_kW, auxheat3_pwr_kW, auxheat4_pwr_kW), na.rm=T)),
+    auxheat_pwr_kW = ifelse(is.na(auxheat1_pwr_kW) & is.na(auxheat2_pwr_kW) & is.na(auxheat3_pwr_kW) & is.na(auxheat4_pwr_kW), NA,
+                       rowSums(cbind(auxheat1_pwr_kW, auxheat2_pwr_kW, auxheat3_pwr_kW, auxheat4_pwr_kW), na.rm=T)),
     # Create HP_system_pwr_kW as sum of all powers (rowSums defaults to zero if all NA)
     HP_system_pwr_kW = ifelse(is.na(ODU_pwr_kW) & is.na(fan_pwr_kW) & is.na(auxheat_pwr_kW), NA,
                               rowSums(cbind(ODU_pwr_kW, fan_pwr_kW, auxheat_pwr_kW), na.rm=T)),
@@ -169,10 +168,12 @@ for (i in site_IDs){
   df_5m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "5 min", data.thresh = 75, statistic = "mean")
   
   write_csv(df_1h, paste0(wd, "clean/1_hour/", i, ".csv"))
-  write_csv(df_5m, paste0(wd, "clean/5_min/", i, ".csv"))
+  write_csv(df_5m , paste0(wd, "clean/5_min/", i, ".csv"))
   write_csv(df_1m, paste0(wd, "clean/1_min/", i, ".csv"))
-  ## Temporary, just write part of the df for the one-second to save some time for now ##
-  write_csv(df[nrow(df)*2/3:nrow(df),], paste0(wd, "clean/1_sec/", i, ".csv"))
+  write_csv(df %>%
+              ## Temporary timestamp filter to reduce time to output ##
+              filter(datetime_UTC > strptime("2023-04-01", "%F")), 
+            paste0(wd, "clean/1_sec/", i, ".csv"))
   
   rm(df, df_1h, df_1m, df_5m, timezone)
   
