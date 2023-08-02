@@ -2,7 +2,8 @@
 # Author: Samuel Rosenberg
 # Company: Pacific Northwest National Laboratory
 # Created on: 2023-07-19
-# Description: 
+# Description: Reads raw CSV files from M&V contractors
+  # and binds into one file for each site.
 #####################################################
 # Todo:
 # 
@@ -17,8 +18,11 @@ rm(list = ls())
 # packages
 if(Sys.info()[7] == "rose775"){
   source("/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/ccHP/hpanalysis/functions_for_use.R")
-} else{
-  print("Kevin please replace this print with your path to hpanalysis so you can load the functions using source")
+} else if(Sys.info()[7] = "keen930"){
+  source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R")
+} else if(Sys.info()[7] = "zhan682"){
+  ## Yiting to update filepath ##
+  source("C:/Users/zhan682/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R")
 }
 
 library(tidyverse)

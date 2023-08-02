@@ -31,10 +31,12 @@ if(Sys.info()[7] == "rose775"){
   wd <- "/Volumes/cchpc/"
   # Need output wd location ("R:/" for Kevin)
   # wd_out <- 
-} else {
+} else if(Sys.info()[7] = "keen930"){
   source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R") 
   wd <- "Q:/"
   wd_out <- "R:/"
+} else if(Sys.info()[7] = "zhan682"){
+  ## Yiting to add for her file paths 
 }
 
 
@@ -138,7 +140,8 @@ df <- df %>% mutate(
 
 
 
-
+## Make a column for HP and defrost cycle times. The last timestamp of each cycle
+  # will store the duration of that cycle in minutes.
 df$HP_cycle_runtimes <- run_cycle_calc(df$site_ID, df$datetime_UTC, df$HP_status, "On")
 df$defrost_cycle_runtimes <- run_cycle_calc(df$site_ID, df$datetime_UTC, df$operating_mode, "Defrost")
 
@@ -211,19 +214,19 @@ df <- df %>%
     # observed from the heat output differing from aux power in aux only mode. The aux heat
     # is causing the air to not fully mix at the sensors. This factor will adjust the heat
     # output from the aux contribution only.
-    heat_output_btu_h_adjusted = 
-    # Heat output from HP
-    heat_output_btu_h - auxheat_pwr_kW * 3412 +
-    # Adjusted aux power
-    auxheat_pwr_kW * 3412 * ifelse(site_ID=="5539NO", 1.5,
-                              ifelse(site_ID=="8220XE", 0.8,
-                                     ifelse(site_ID=="6950NE", 0.8,
-                                            ifelse(site_ID=="9944LD", 0.5,
-                                                   ifelse(site_ID=="4228VB", 0.95,
-                                                          ifelse(site_ID=="2896BR", 1,
-                                                                 ifelse(site_ID=="2563EH", 1.5,
-                                                                        ifelse(site_ID=="6112OH", 1.2,
-                                                                               1)))))))),
+    # heat_output_btu_h_adjusted = 
+    # # Heat output from HP
+    # heat_output_btu_h - auxheat_pwr_kW * 3412 +
+    # # Adjusted aux power
+    # auxheat_pwr_kW * 3412 * ifelse(site_ID=="5539NO", 1.5,
+    #                           ifelse(site_ID=="8220XE", 0.8,
+    #                                  ifelse(site_ID=="6950NE", 0.8,
+    #                                         ifelse(site_ID=="9944LD", 0.5,
+    #                                                ifelse(site_ID=="4228VB", 0.95,
+    #                                                       ifelse(site_ID=="2896BR", 1,
+    #                                                              ifelse(site_ID=="2563EH", 1.5,
+    #                                                                     ifelse(site_ID=="6112OH", 1.2,
+    #                                                                            1)))))))),
 
   # Cooling output
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)

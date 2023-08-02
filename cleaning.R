@@ -33,10 +33,12 @@ if(Sys.info()[7] == "rose775"){
     wd <- "/Volumes/cchpc/"
     # Need output wd location ("R:/" for Kevin)
     # wd_out <- 
-  } else {
+} else if(Sys.info()[7] = "keen930"){
     source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R") 
     wd <- "Q:/"
     wd_out <- "R:/"
+} else if(Sys.info()[7] = "zhan682"){
+    ## Yiting to add for her file paths 
 }
 
 
@@ -103,7 +105,7 @@ for (i in site_IDs){
     AHU_pwr_kW = ifelse(AHU_pwr_kW < 0, - AHU_pwr_kW, AHU_pwr_kW),
     ODU_pwr_kW = ifelse(ODU_pwr_kW < 0, - ODU_pwr_kW, ODU_pwr_kW),
     
-    ## One site at least doesn't have a fourth aux -- will need to create it manually ##
+    ## TO DO: One site at least doesn't have a fourth aux -- will need to create it manually ##
     auxheat1_pwr_kW = ifelse(auxheat1_pwr_kW < 0, - auxheat1_pwr_kW, auxheat1_pwr_kW),
     auxheat2_pwr_kW = ifelse(auxheat2_pwr_kW < 0, - auxheat2_pwr_kW, auxheat2_pwr_kW),
     auxheat3_pwr_kW = ifelse(auxheat3_pwr_kW < 0, - auxheat3_pwr_kW, auxheat3_pwr_kW),
