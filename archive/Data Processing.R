@@ -15,12 +15,12 @@ library(data.table)
 wd <- "C:/Users/keen930/PNNL/CCHP - Project Management - Project Management/Data Analysis"
 # wd <- "/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/Project Management/Data Analysis"
 
-# Read data
-df <- read.csv('C:/Users/keen930/PNNL/CCHP - Project Management - Project Management/Data Analysis/Raw Data/7083LM.csv') %>%
-  mutate(Timestamp = strptime(Timestamp, "%m/%d/%Y %H:%M", tz="US/Eastern"),
-         Site_ID = "7083LM",
-         Total_Power = HP_Power + Fan_Power + Aux_Power) %>%
-  filter(!is.na(Timestamp))
+# Read data for 7083LM
+# df <- read.csv('C:/Users/keen930/PNNL/CCHP - Project Management - Project Management/Data Analysis/Raw Data/7083LM.csv') %>%
+#   mutate(Timestamp = strptime(Timestamp, "%m/%d/%Y %H:%M", tz="US/Eastern"),
+#          Site_ID = "7083LM",
+#          Total_Power = HP_Power + Fan_Power + Aux_Power) %>%
+#   filter(!is.na(Timestamp))
 
   # Read_csv (tidyverse) is crashing RStudio, trying fread (data.table) which is 
   # supposed to be better with large files
@@ -120,12 +120,12 @@ sites <- c(
   # "6950NE",
   # "7083LM",  # Still no data for this site.
   # "8220XE",
-  # "8726VB",
+  "8726VB",
   # "9944LD",
   # "4228VB",
   # "5539NO",
   # "5291QJ",
-  "2458CE",
+  # "2458CE",
   "")
 timeframe <- c(strptime("12/10/2022", format="%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==sites[1]]), 
                strptime("4/01/2023", format="%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==sites[1]]))
@@ -626,8 +626,15 @@ df <- df %>%
 
 
 
+## Print Winter Performance data to file to store ##
+write.csv(df, paste0(wd, "/Winter Performance Data/", sites[1], ".csv"), row.names = F)
+
+
+
 ## Set sitename to not have to update for each graph:
-sitename = "2458CE"
+sitename = "2896BR"
+
+
 
 ## Set minimum temperature for temperature bins for when sample size is too small
 temp_min = ifelse(sitename=="4228VB", 5, ifelse(sitename=="9944LD", -20, ifelse(sitename=="8220XE", -15,
