@@ -38,7 +38,7 @@ if(Sys.info()[7] == "rose775"){
 }
 
 
-# Load data
+## Load data
 site_IDs <- unique(substr(list.files(path = paste0(wd, "clean/1_min/")), 6, 11))
 metadata <- read_csv(file = paste0(wd, "site-metadata.csv"))
 
@@ -52,14 +52,7 @@ for (i in site_IDs){
   
   
   
-  
-  
-  
-}
-
-
-
-
+## Calculate columns 
 
 df <- df %>% mutate(
   # Add column that determines the number of aux legs
@@ -154,10 +147,10 @@ df$defrost_cycle_runtimes <- run_cycle_calc(df$site_ID, df$datetime_UTC, df$oper
   # See notes for each site in the CCHP Analysis Notebook for more details.
 df <- df %>% mutate(
   defrost_cycle_runtimes = ifelse((site_ID=="4228VB" | site_ID=="5291QJ" | site_ID=="2458CE") & 
-                                    Defrost_Cycle_Runtimes < 1, NA, 
-                                  ifelse(site_ID=="6221OH" & Defrost_Cycle_Runtimes < 0.5, NA,
-                                  ifelse(site_ID=="4228VB" & Defrost_Cycle_Runtimes > 60, NA,
-                                         Defrost_Cycle_Runtimes))))
+                                    defrost_cycle_runtimes < 1, NA, 
+                                  ifelse(site_ID=="6221OH" & defrost_cycle_runtimes < 0.5, NA,
+                                  ifelse(site_ID=="4228VB" & defrost_cycle_runtimes > 60, NA,
+                                         defrost_cycle_runtimes))))
 
 
 df <- df %>%
@@ -186,7 +179,7 @@ df <- df %>%
   # Partial Water Pressure (Pw) = RH * Pws; 
   # Pws = f(T); T in Fahrenheit, based on curve fit
   # 6th order poly fit: Pws = -0.000000001546*T^6 + 0.000000516256*T^5 - 0.000020306966*T^4 + 0.002266035021*T^3 + 0.190010315225*T^2 + 6.715900713408*T + 125.349159019000
-  Partial_Water_Pressure_Supply = SA_RH / 100 * 
+  partial_water_pressure_supply = SA_RH / 100 * 
     (-0.000000001546*SA_TempF^6 + 
        0.000000516256*SA_TempF^5 - 
        0.000020306966*SA_TempF^4 + 
@@ -202,15 +195,15 @@ df <- df %>%
  
   # Humidity ratio of supply air (0.62198 * Pw / (P - Pw))
   # P = 97,717 Pascals at 1,000 ft elevation (we could use a more accurate look up for each location)
-  Supply_Humidity_Ratio = 
-    0.62198 * Partial_Water_Pressure_Supply / (97717 - Partial_Water_Pressure_Supply),
+  supply_humidity_ratio = 
+    0.62198 * partial_water_pressure_supply / (97717 - partial_water_pressure_supply),
   
   # Heat Output
     # Q-heating = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp)
-  Heat_Output_Btu_h = ifelse(is.na(operating_mode), NA,
+  heat_output_btu_h = ifelse(is.na(operating_mode) | operating_mode == "Cooling", NA,
       0.0715 *                                                # Density of air at 35C (lb/ft3)
       supply_flow_rate_CFM * 60 *                             # CFM * min/hour
-      (0.24 + 0.444 *  Supply_Humidity_Ratio) *               # Specific heat capacity (Btu/F-lb)
+      (0.24 + 0.444 *  supply_humidity_ratio) *               # Specific heat capacity (Btu/F-lb)
       (SA_TempF - RA_temp_F)),                                 # Temperature delta
   
   # Adjusted Heat Output
@@ -218,9 +211,9 @@ df <- df %>%
     # observed from the heat output differing from aux power in aux only mode. The aux heat
     # is causing the air to not fully mix at the sensors. This factor will adjust the heat
     # output from the aux contribution only.
-  Heat_Output_Btu_h_adjusted = 
+    heat_output_btu_h_adjusted = 
     # Heat output from HP
-    Heat_Output_Btu_h - auxheat_pwr_kW * 3412 +
+    heat_output_btu_h - auxheat_pwr_kW * 3412 +
     # Adjusted aux power
     auxheat_pwr_kW * 3412 * ifelse(site_ID=="5539NO", 1.5,
                               ifelse(site_ID=="8220XE", 0.8,
@@ -230,268 +223,97 @@ df <- df %>%
                                                           ifelse(site_ID=="2896BR", 1,
                                                                  ifelse(site_ID=="2563EH", 1.5,
                                                                         ifelse(site_ID=="6112OH", 1.2,
-                                                                               1))))))))
+                                                                               1)))))))),
 
   # Cooling output
     # Q-cooling = (dry air density) * (blower airflow rate) * (specific heat) * (delta Temp) / (1 + Humidity Ratio)
-  # HP_Cool_Output_Btu_h = 0.0765 *                                       # Density of air at 15C (lb/ft3)
-  #     supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
-  #     (0.24 + 0.444 *  Supply_Humidity_Ratio) *                         # Specific heat capacity (Btu/F-lb)
-  #     (SA_TempF - RA_temp_F) /
-  #     (1 + Supply_Humidity_Ratio),
+  cooling_output_btu_h = ifelse(is.na(operating_mode) | operating_mode %in% c("Heating-HP Only",
+                                                                              "Heating-Aux/HP",
+                                                                              "Heating-Aux Only",
+                                                                              "Defrost"), NA,
+      0.0765 *                                                          # Density of air at 15C (lb/ft3)
+      supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
+      (0.24 + 0.444 *  supply_humidity_ratio) *                         # Specific heat capacity (Btu/F-lb)
+      (SA_TempF - RA_temp_F) /
+      (1 + supply_humidity_ratio))
 )
 
 
 
-## Print Winter Performance data to file to store ##
-write.csv(df, paste0(wd, "/Winter Performance Data/", sites[1], ".csv"), row.names = F)
+### Diagnostic Graphs ----
 
 
+# Vector storing every date in the dataframe
+dates <- unique(df$date_local)
 
-
-
-# Temperature time series comparison chart
-RoomTempTimeSeries <- function(interval, timestart, timeend){
-  # Look at a time series graph for all temperature monitors, time interval (e.g, 5-minute), time period, and site
-  # Interval is in units of minutes, and so the maximum interval would be 60 minutes/1 hour.
-  # The time start and end should be a date string in format for example "4/01/2022 0:00".
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==sitename]),
-                Interval = minute(datetime_UTC) %/% interval) %>% 
-    filter(site_ID == sitename &
-             datetime_UTC >= strptime(timestart,"%F %H:%M", tz=metadata$Timezone[metadata$site_ID==sitename]) &
-             datetime_UTC <= strptime(timeend,"%F %H:%M", tz=metadata$Timezone[metadata$site_ID==sitename])) %>%
-    group_by(site_ID, Date, Hour, Interval) %>% 
-    summarize(datetime_UTC = datetime_UTC[1],
-              Room1_TempF = mean(Room1_TempF,na.rm=T),
-              Room2_TempF = mean(Room2_TempF,na.rm=T),
-              Room3_TempF = mean(Room3_TempF,na.rm=T),
-              Room4_TempF = mean(Room4_TempF,na.rm=T),
-              AHU_TempF = mean(AHU_TempF,na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(datetime_UTC))) +
-    geom_line(aes(y=Room1_TempF, color = "Room 1"),size=0.5) + 
-    geom_line(aes(y=Room2_TempF, color = "Room 2"),size=0.5) +
-    geom_line(aes(y=Room3_TempF, color = "Room 3"),size=0.5) +
-    geom_line(aes(y=Room4_TempF, color = "Room 4"),size=0.5) +
-    geom_line(aes(y=AHU_TempF, color = "AHU Ambient"),size=0.5) +
-    scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0, 200, by=1)) +
-    scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
-    labs(title=paste0("Room temperature time series plot for site ", sitename),x="",y="Temperature (F)") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
-    guides(color=guide_legend(override.aes=list(size=3)))
+# Room temperature time series
+  # Loop through dates (skip the first one to not have a partial day)
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-Room-Temp_',d,'.png'),
+         plot = daily_room_temperature_comparison(i, d, d1),
+         path = paste0(wd_out,'/daily_ops/',i, '/daily_room_temps/'),
+         width=12, height=4, units='in')
 }
-# RoomTempTimeSeries(5, "2023-02-23 00:00", "2023-02-26 00:00")
-  # Save a sample of data to the folder for each site
-    # Adjust dates manually
-ggsave(paste0(sitename, '_Room_Temperature_Comparison.png'),
-       plot = RoomTempTimeSeries(5, "2023-02-16 00:00", "2023-02-17 00:00"),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
-       width=12, height=4, units='in')
 
 
-# Supply temperature time series comparison chart
-SupplyTempTimeSeries <- function(interval, timestart, timeend){
-  # Look at a time series graph for the four supply temperature monitors, time interval (e.g, 5-minute), time period, and site
-  # Interval is in units of minutes, and so the maximum interval would be 60 minutes/1 hour.
-  # The time start and end should be a date string in format for example "4/01/2022 0:00".
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==sitename]),
-                Interval = minute(datetime_UTC) %/% interval) %>% 
-    filter(site_ID == sitename &
-             datetime_UTC >= strptime(timestart,"%F %H:%M", tz=metadata$Timezone[metadata$site_ID==sitename]) &
-             datetime_UTC <= strptime(timeend,"%F %H:%M", tz=metadata$Timezone[metadata$site_ID==sitename])) %>%
-    group_by(site_ID, Date, Hour, Interval) %>% 
-    summarize(datetime_UTC = datetime_UTC[1],
-              SA1_TempF = mean(SA1_TempF,na.rm=T),
-              SA2_TempF = mean(SA2_TempF,na.rm=T),
-              SA3_TempF = mean(SA3_TempF,na.rm=T),
-              SA4_TempF = mean(SA4_TempF,na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(datetime_UTC))) +
-    geom_line(aes(y=SA1_TempF, color = "SA1"),size=0.5) + 
-    geom_line(aes(y=SA2_TempF, color = "SA2"),size=0.5) + 
-    geom_line(aes(y=SA3_TempF, color = "SA3"),size=0.5) + 
-    geom_line(aes(y=SA4_TempF, color = "SA4"),size=0.5) + 
-    scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0,200, by=1)) +
-    scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
-    labs(title=paste0("Supply temperature time series plot for site ", sitename),x="",y="Temperature (F)") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5),) +
-    guides(color=guide_legend(override.aes=list(size=3)))
+
+# Supply temperature time series
+  # Loop through dates (skip the first one to not have a partial day)
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-Supply-Temp_',d,'.png'),
+         plot = daily_supply_temperature_comparison(i, d, d1),
+         path = paste0(wd_out,'/daily_ops/',i, '/daily_SATs/'),
+         width=12, height=4, units='in')
 }
-# SupplyTempTimeSeries(5, "2023-03-16 00:00", "2023-03-19 00:00")
-# Save a sample week of data to the folder for each site
-  # Adjust date manually
-ggsave(paste0(sitename, '_Supply_Temperature_Comparison.png'),
-       plot = SupplyTempTimeSeries(5, "2023-03-16 00:00", "2023-03-19 00:00"),
-       path = paste0(wd,'/Graphs/',sitename, '/'),
-       width=12, height=4, units='in')
 
 
 
-
-# Investigate defrost cycles for every day
-DefrostCycleTimeSeries <- function(site, timestart, timeend){
-  # Look at a time series graph for defrost run times and total duration
-  # as compared to HP, Aux, and Fan power and SA temperature
-  # The time start and end should be character with format "%Y-%m-%d".
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==site]),
-                Defrost = ifelse(operating_mode=="Defrost", 5, NA)) %>% 
-    filter(site_ID == site &
-             datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$site_ID==site]) &
-             datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$site_ID==site])) %>%
-    ggplot(aes(x=as.POSIXct(datetime_UTC))) +
-    geom_line(aes(y=ODU_pwr_kW, color = "Outdoor Unit Power"),size=0.3) + 
-    geom_line(aes(y=fan_pwr_kW, color = "Supply Fan Power"),size=0.3) +
-    geom_line(aes(y=auxheat_pwr_kW, color = "Auxiliary Power"),size=0.3) + 
-    geom_point(aes(y=Defrost, color = "Defrost Mode On"),size=2) + 
-    geom_point(aes(y=Defrost_Cycle_Runtimes/2, color = "Defrost Cycle Length"),size=3,shape=8) +
-    scale_y_continuous(name = "Power (kW)",
-                       limits = c(-0.5, 21),
-                       sec.axis = sec_axis(~.*2, name ="Defrost Cycle Length (mins)")) +
-    scale_color_manual(name = "", breaks = c("Auxiliary Power","Outdoor Unit Power","Supply Fan Power","Defrost Mode On","Defrost Cycle Length"),
-                       values = c("#E69F00","black","#CC79A7","#009E73","#56B4E9", "gray", "#F0E442", "#0072B2", "#D55E00")) +
-    labs(title=paste0("Defrost runtime chart for site ", site),x="") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.5),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
-    guides(color=guide_legend(override.aes = list(shape=c(NA,NA,NA,16,8), 
-                                                  size=c(1,1,1,3,3),
-                                                  linetype=c(1,1,1,NA,NA))))
+# Defrost cycle time series
+  # Loop through dates (skip the first one to not have a partial day)
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-Defrost_',d,'.png'),
+         plot = daily_defrost_plot(i, d, d1),
+         path = paste0(wd_out,'/daily_ops/',i, '/daily_defrost/'),
+         width=12, height=4, units='in')
 }
-# DefrostCycleTimeSeries("6112OH", "2023-02-25", "2023-02-26")
-# Loop to print daily defrost time series graphs, one for each day for each site
-for(id in unique(df$site_ID)){
-  dates <- unique(df$Date[df$site_ID==id])
-  for(d in dates[-1]){
-    d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
-    ggsave(paste0(id, '_Daily-Defrost-Cycles_',d,'.png'),
-           plot = DefrostCycleTimeSeries(id, d, d1),
-           path = paste0(wd,'/Graphs/',id, '/Daily Defrost Cycles/'),
-           width=12, height=4, units='in')
-  }
+
+
+
+# Daily operation power and temperature time series
+  # Loop through dates (skip the first one to not have a partial day)
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-Operation_',d,'.png'),
+         plot = daily_operation_plot(i, d, d1),
+         path = paste0(wd_out,'/daily_ops/',i, '/daily_operation/'),
+         width=12, height=4, units='in')
 }
-rm(dates,d1,d,id)
 
 
-
-# Power time series comparison chart with OAT and SAT
-OperationTimeSeries <- function(site, timestart, timeend){
-  # The time start and end should be character with format "%Y-%m-%d".
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==site])) %>% 
-    filter(site_ID == site &
-             datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$site_ID==site]) &
-             datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$site_ID==site])) %>%
-    ggplot(aes(x=as.POSIXct(datetime_UTC))) +
-    geom_line(aes(y=OA_temp_F/5, color = "Outdoor Air Temperature"),size=0.3) + 
-    geom_line(aes(y=SA_TempF/5, color = "Supply Air Temperature"),size=0.3) +
-    geom_line(aes(y=ODU_pwr_kW, color = "Outdoor Unit Power"),size=0.3) + 
-    geom_line(aes(y=fan_pwr_kW, color = "Supply Fan Power"),size=0.3) +
-    geom_line(aes(y=auxheat_pwr_kW, color = "Auxiliary Power"),size=0.3) + 
-    scale_y_continuous(name = "Power (kW)",
-                       limits = c(-4, 25),
-                       sec.axis = sec_axis(~.*5, name ="Temperature (F)")) +
-    scale_color_manual(name = "", breaks = c("Auxiliary Power","Outdoor Unit Power","Supply Fan Power","Outdoor Air Temperature","Supply Air Temperature"),
-                       values = c("#E69F00","gray","#009E73","black","#56B4E9","#CC79A7", "#F0E442", "#0072B2", "#D55E00")) +
-    labs(title=paste0("System operation time series plot for site ", site),x="") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.5),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
-    guides(color=guide_legend(override.aes=list(size=3)))
+daily_COP_plot
+# COP, heat and cooling output, and power time series
+  # Loop through dates (skip the first one to not have a partial day)
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-COP_',d,'.png'),
+         plot = daily_COP_plot(i, d, d1),
+         path = paste0(wd_out,'/daily_ops/',i, '/daily_COPs/'),
+         width=12, height=4, units='in')
 }
-# OperationTimeSeries(sitename, "2023-02-12", "2023-02-13")
-# Loop to print daily operation time series graphs, one for each day for each site
-for(id in unique(df$site_ID)){
-  dates <- unique(df$Date[df$site_ID==id])  
-  for(d in dates[-1]){
-    d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
-    ggsave(paste0(id, '_Daily-Operation_',d,'.png'),
-           plot = OperationTimeSeries(id, d, d1),
-           path = paste0(wd,'/Graphs/',id, '/Daily Operation/'),
-           width=12, height=4, units='in')
-  }
-}
-rm(dates,d1,d,id)
-
-
-
-# Power, capacity, and COP time series comparison chart with OAT and RAT
-COPTimeSeries <- function(site, timestart, timeend, interval){
-  # The time start and end should be character with format "%Y-%m-%d".
-  # Interval is in minutes, at a maximum of 60 mins.
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==site]),
-                Interval = minute(datetime_UTC) %/% interval) %>% 
-    filter(site_ID == site &
-             datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$site_ID==site]) &
-             datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$site_ID==site])) %>%
-    group_by(site_ID, Date, Hour, Interval) %>%
-    summarize(datetime_UTC = datetime_UTC[1],
-              SA_TempF=mean(SA_TempF, na.rm=T),
-              RA_temp_F=mean(RA_temp_F, na.rm=T),
-              ODU_pwr_kW=mean(ODU_pwr_kW, na.rm=T),
-              # fan_pwr_kW=mean(fan_pwr_kW, na.rm=T),
-              auxheat_pwr_kW=mean(auxheat_pwr_kW, na.rm=T),
-              Heat_Output=mean(Heat_Output_Btu_h/3412, na.rm=T),
-              COP_Heating=sum(Heat_Output_Btu_h/3412, na.rm=T)/sum(Total_Power, na.rm=T)) %>%
-    ggplot(aes(x=as.POSIXct(datetime_UTC))) +
-    geom_line(aes(y=SA_TempF/2, linetype = "Supply Air Temperature"),color="black",size=0.3) + 
-    geom_line(aes(y=RA_temp_F/2, linetype = "Return Air Temperature"),color="black",size=0.3) +
-    geom_line(aes(y=ODU_pwr_kW, color = "Outdoor Unit Power"),size=0.3) + 
-    # geom_line(aes(y=fan_pwr_kW, color = "Supply Fan Power"),size=0.3) +
-    geom_line(aes(y=auxheat_pwr_kW, color = "Auxiliary Power"),size=0.3) + 
-    geom_line(aes(y=Heat_Output, color = "Heat Output"),size=0.3) +
-    geom_line(aes(y=COP_Heating, color = "COP"),size=1) + 
-    scale_y_continuous(name = "Power (kW)",
-                       # limits = c(-4, 25),
-                       sec.axis = sec_axis(~.*2, name ="Temperature (F)")) +
-    scale_color_manual(name = "Power/COP", breaks = c("Auxiliary Power","Outdoor Unit Power", "Heat Output", "COP"),
-                       values = c("#E69F00","#009E73","#F0E442","#CC79A7")) +
-    scale_linetype_manual(name = "Temperature", values = c("solid","dashed")) +
-    labs(title=paste0("COP and power investigation time series plot for site ", site),x="") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.5),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
-    guides(color=guide_legend(override.aes=list(size=3)))
-}
-# COPTimeSeries(sitename, "2023-03-17", "2023-03-17", 5)
-# Loop to print daily operation time series graphs, one for each day for each site
-for(id in unique(df$site_ID)){
-  dates <- unique(df$Date[df$site_ID==id])     
-  for(d in dates[-1]){
-    d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==id]) + 60*60*24), 1, 10) # Date plus one day
-    ggsave(paste0(id, '_Daily-COP_',d,'.png'),
-           plot = COPTimeSeries(id, d, d1, 5),
-           path = paste0(wd,'/Graphs/',id, '/Daily COP/'),
-           width=12, height=4, units='in')
-  }
-}
-rm(dates,d1,d,id)
 
 
 
 
-
-# 1a. Operating mode daily summary
+# Operating mode daily summary
+  ## Make one for winter performance and one for should performance and one for summer performance ##
   # Look at a time series graph of each day to see fraction of time in each operating mode
 write.csv(df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==sitename]),
                         operating_mode = ifelse(is.na(operating_mode), "Data Unavailable", operating_mode)) %>%
@@ -592,4 +414,8 @@ df <- df %>%
             ~ ifelse(site_ID != "9944LD" & datetime_UTC > strptime("2023-02-15 12:00:00", "%F %T", tz="US/Mountain") & datetime_UTC < strptime("2023-02-16 12:00:00", "%F %T", tz="US/Mountain"), NA, .))
 
 
+## Print csv with calculated columns ##
+write.csv(df, paste0(), row.names = F)
+
+}
 
