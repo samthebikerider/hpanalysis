@@ -26,7 +26,6 @@ fill_missing_timestamps <- function(df, timestamp_col, format, interval){
 
   df[[timestamp_col]] <- as.POSIXct(df[[timestamp_col]], format = format)
 
-  ts <- seq.POSIXt(min(df[[timestamp_col]]), max(df[[timestamp_col]]), by= interval)
   ts <- seq.POSIXt(as.POSIXct(min(df[[timestamp_col]]), format), as.POSIXct(max(df[[timestamp_col]]), format), by = interval)
 
   ts <- seq.POSIXt(min(df[[timestamp_col]]), max(df[[timestamp_col]]), by = interval)
