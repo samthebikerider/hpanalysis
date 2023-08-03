@@ -78,10 +78,14 @@ for (i in michaels_site_IDs){
   setwd(michaels_wd) # set wd to michaels raw data
   df <- list.files(path = michaels_wd, pattern = i) %>%
            map_df(~fread(.)) # read all files for the current site iteration and bind_rows to single df
-  df <- df %>%
-    rowwise() %>% 
-    mutate(Aux_Power = sum(c_across(colnames(df)[colnames(df) %in% c("Aux1_Power", "Aux2_Power", "Aux3_Power", "Aux4_Power")]), na.rm = T)) # sum for aux power
+  
+  # KK: I can sum aux power in the cleaning phase ##
+  # df <- df %>%
+  #   rowwise() %>% 
+  #   mutate(Aux_Power = sum(c_across(colnames(df)[colnames(df) %in% c("Aux1_Power", "Aux2_Power", "Aux3_Power", "Aux4_Power")]), na.rm = T)) # sum for aux power
+  
   to_keep <- c("index", "HP_Power", "Fan_Power", "AHU_Power", "Aux_Power",
+               "Aux1_Power", "Aux2_Power", "Aux3_Power", "Aux4_Power",
                "OA_TempF", "OA_RH", "SA_temp_blower_cabinet_F", "SA_RH_blower_cabinet",
                "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",
                "SA4_TempF", "SA4_RH", "RA_TempF", "RA_RH", "AHU_TempF", "AHU_RH",
