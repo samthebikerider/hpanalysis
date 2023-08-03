@@ -84,7 +84,7 @@ for (i in michaels_site_IDs){
   #   rowwise() %>% 
   #   mutate(Aux_Power = sum(c_across(colnames(df)[colnames(df) %in% c("Aux1_Power", "Aux2_Power", "Aux3_Power", "Aux4_Power")]), na.rm = T)) # sum for aux power
   
-  to_keep <- c("index", "HP_Power", "Fan_Power", "AHU_Power", "Aux_Power",
+  to_keep <- c("index", "HP_Power", "Fan_Power", "AHU_Power",
                "Aux1_Power", "Aux2_Power", "Aux3_Power", "Aux4_Power",
                "OA_TempF", "OA_RH", "SA_temp_blower_cabinet_F", "SA_RH_blower_cabinet",
                "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",

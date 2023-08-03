@@ -60,7 +60,7 @@ for (i in site_IDs){
     mutate(site_ID = i,
            datetime_UTC =  force_tz(index, tzone = "UTC")) %>%
     
-    ## Remove the select once Sam puts this in his script ##
+    ## Remove the "select" once Sam runs this in his script ##
     select(any_of(c("datetime_UTC", "site_ID", "index", "HP_Power", "Fan_Power", "AHU_Power", "Aux_Power",
                     "OA_TempF", "OA_RH", "Aux1_Power", "Aux2_Power", "Aux3_Power","Aux4_Power",
                     "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",
