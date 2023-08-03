@@ -49,6 +49,8 @@ if(Sys.info()[7] == "rose775"){
 site_IDs <- unique(substr(list.files(path = paste0(wd, "raw2/sites/")), 6, 11))
 metadata <- read_csv(file = paste0(wd, "site-metadata.csv"))
 
+## TODO: Add process for E350 files
+
 for (i in site_IDs){
   print(paste("beginning site", i, sep = " "))
   

@@ -55,35 +55,17 @@ for (i in site_IDs){
     ## TODO: once we get E350 data, integrate defrost_on_1 to rv_volts column in cleaning.R ##
     mutate(DEFROST_ON_1 = NA)
   
-  
-## Repeating this for 1-minute data because timeAverage does not handle categorical variables ##
-  # Add fields for the date, hour and weekday for each timestamp, converting to the local timezone
-  ## DELETE this once run cleaning script again ##
-  timezone = metadata$Timezone[metadata$Site_ID==i]
-  df <- df %>% 
-    rename(datetime_UTC = "date") %>%
-    mutate(site_ID = i,
-                      date_local = as.character(date(with_tz(datetime_UTC, tzone=timezone))),
-                      hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
-                      weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T),
-           # Room4 temp not in one dataset, already fixed in cleaning, just make NA for now
-           room4_temp_F = as.numeric(NA))
-  
-  
-  
+
   
 ## Calculate columns 
 
 df <- df %>% mutate(
-  # Add column that determines the number of aux legs
-    # Rheem site 5539N0 has larger unit, the first leg measures around 9 kW. Only one unit.
-    # Will need to update for Solon, NY once we have data.
-  number_aux_legs = ifelse(auxheat_pwr_kW < 0.1, NA,
-                           ifelse(site_ID == "5539NO" & auxheat_pwr_kW > 8, 1,
-                                  # All other sites
-                                  ifelse(auxheat_pwr_kW > 18, 4,
-                                         ifelse(auxheat_pwr_kW > 13, 3,
-                                                ifelse(auxheat_pwr_kW > 8, 2, 1))))))
+  # Add column that determines the number of aux legs that are active at every timestamp
+  number_aux_legs = ifelse(sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==4, 4,
+                           ifelse(sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==3, 3,
+                                  ifelse(sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==2, 2,
+                                         sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==1, 1,
+                                         0))))
 
 
 ## Operating mode ##
