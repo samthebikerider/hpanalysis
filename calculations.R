@@ -31,18 +31,19 @@ if(Sys.info()[7] == "rose775"){
   wd <- "/Volumes/cchpc/"
   # Need output wd location ("R:/" for Kevin)
   # wd_out <- 
-} else if(Sys.info()[7] = "keen930"){
+} else if(Sys.info()[7] == "keen930"){
   source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R") 
   wd <- "Q:/"
   wd_out <- "R:/"
-} else if(Sys.info()[7] = "zhan682"){
+} else if(Sys.info()[7] == "zhan682"){
   ## Yiting to add for her file paths 
 }
 
 
 ## Load data
-site_IDs <- unique(substr(list.files(path = paste0(wd, "clean/1_min/")), 6, 11))
+site_IDs <- unique(substr(list.files(path = paste0(wd, "clean/1_min/")), 1, 6))
 metadata <- read_csv(file = paste0(wd, "site-metadata.csv"))
+
 
 for (i in site_IDs){
   print(paste("beginning site", i, sep = " "))
@@ -50,7 +51,24 @@ for (i in site_IDs){
   ## Load data from 'clean' folder ----
     # Pulling in 1-min for now, but should change to 1-sec with RC
   df <- list.files(path = paste0(wd, "clean/1_min/"), pattern = i, full.names = T) %>%
-    map_df(~read_csv(.))
+    map_df(~read_csv(.)) %>%
+    ## TODO: once we get E350 data, integrate defrost_on_1 to rv_volts column in cleaning.R ##
+    mutate(DEFROST_ON_1 = NA)
+  
+  
+## Repeating this for 1-minute data because timeAverage does not handle categorical variables ##
+  # Add fields for the date, hour and weekday for each timestamp, converting to the local timezone
+  ## DELETE this once run cleaning script again ##
+  timezone = metadata$Timezone[metadata$Site_ID==i]
+  df <- df %>% 
+    rename(datetime_UTC = "date") %>%
+    mutate(site_ID = i,
+                      date_local = as.character(date(with_tz(datetime_UTC, tzone=timezone))),
+                      hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
+                      weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T),
+           # Room4 temp not in one dataset, already fixed in cleaning, just make NA for now
+           room4_temp_F = as.numeric(NA))
+  
   
   
   
@@ -78,8 +96,8 @@ df <- df %>% mutate(
     # Cooling
 
 df <- df %>% mutate(operating_mode =
-  # 1. If any of the key parameters are NA, Operating Mode is NA
-    ifelse(is.na(fan_pwr_kW) | is.na(ODU_pwr_kW) | is.na(auxheat_pwr_kW), NA,
+  # 1. If any of the key COP parameters are NA, Operating Mode is NA
+    ifelse(is.na(fan_pwr_kW) | is.na(ODU_pwr_kW) | is.na(auxheat_pwr_kW) | is.na(SA_temp_F) | is.na(SA_RH) | is.na(RA_temp_F), NA,
            
   # 2. Identify defrost mode                      
       # For Michaels sites, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
@@ -106,7 +124,8 @@ df <- df %>% mutate(operating_mode =
                        "System Off")))))))))))) %>%
  
   # 4. Correct for cooling mode to differentiate from defrost mode
-    # Indicators: Operating Mode is Defrost, Aux Power is less than 0.1 kW and OA Temp is greater than 50F
+    # Indicators: Operating Mode is Defrost, Aux Power is less than 0.1 kW and OA Temp is greater than 50F.
+    # We will need to check this and adjust.
     mutate(operating_mode=ifelse(
       # Michaels sites
       site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB", "7083LM") & operating_mode=="Defrost" & auxheat_pwr_kW < 0.1 & OA_temp_F > 50,
@@ -183,12 +202,12 @@ df <- df %>%
   # Pws = f(T); T in Fahrenheit, based on curve fit
   # 6th order poly fit: Pws = -0.000000001546*T^6 + 0.000000516256*T^5 - 0.000020306966*T^4 + 0.002266035021*T^3 + 0.190010315225*T^2 + 6.715900713408*T + 125.349159019000
   partial_water_pressure_supply = SA_RH / 100 * 
-    (-0.000000001546*SA_TempF^6 + 
-       0.000000516256*SA_TempF^5 - 
-       0.000020306966*SA_TempF^4 + 
-       0.002266035021*SA_TempF^3 + 
-       0.190010315225*SA_TempF^2 + 
-       6.715900713408*SA_TempF + 
+    (-0.000000001546*SA_temp_F^6 + 
+       0.000000516256*SA_temp_F^5 - 
+       0.000020306966*SA_temp_F^4 + 
+       0.002266035021*SA_temp_F^3 + 
+       0.190010315225*SA_temp_F^2 + 
+       6.715900713408*SA_temp_F + 
        125.349159019000),
 
   # Air pressure (merge from metadata)
@@ -207,7 +226,7 @@ df <- df %>%
       0.0715 *                                                # Density of air at 35C (lb/ft3)
       supply_flow_rate_CFM * 60 *                             # CFM * min/hour
       (0.24 + 0.444 *  supply_humidity_ratio) *               # Specific heat capacity (Btu/F-lb)
-      (SA_TempF - RA_temp_F)),                                 # Temperature delta
+      (SA_temp_F - RA_temp_F)),                                 # Temperature delta
   
   # Adjusted Heat Output
     # Many of the sites are significantly affected by SAT sensor placement, which can be
@@ -237,7 +256,7 @@ df <- df %>%
       0.0765 *                                                          # Density of air at 15C (lb/ft3)
       supply_flow_rate_CFM * 60 *                                       # CFM * min/hour
       (0.24 + 0.444 *  supply_humidity_ratio) *                         # Specific heat capacity (Btu/F-lb)
-      (SA_TempF - RA_temp_F) /
+      (SA_temp_F - RA_temp_F) /
       (1 + supply_humidity_ratio))
 )
 
@@ -253,7 +272,7 @@ dates <- unique(df$date_local)
   # Loop through dates (skip the first one to not have a partial day)
 for(d in dates[-1]){
   # d1 = d + one day
-  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
   ggsave(paste0(i, '_Daily-Room-Temp_',d,'.png'),
          plot = daily_room_temperature_comparison(i, d, d1),
          path = paste0(wd_out,'/daily_ops/',i, '/daily_room_temps/'),
@@ -264,161 +283,109 @@ for(d in dates[-1]){
 
 # Supply temperature time series
   # Loop through dates (skip the first one to not have a partial day)
-for(d in dates[-1]){
-  # d1 = d + one day
-  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
-  ggsave(paste0(i, '_Daily-Supply-Temp_',d,'.png'),
-         plot = daily_supply_temperature_comparison(i, d, d1),
-         path = paste0(wd_out,'/daily_ops/',i, '/daily_SATs/'),
-         width=12, height=4, units='in')
-}
+# for(d in dates[-1]){
+#   # d1 = d + one day
+#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+#   ggsave(paste0(i, '_Daily-Supply-Temp_',d,'.png'),
+#          plot = daily_supply_temperature_comparison(i, d, d1),
+#          path = paste0(wd_out,'/daily_ops/',i, '/daily_SATs/'),
+#          width=12, height=4, units='in')
+# }
 
 
 
 # Defrost cycle time series
   # Loop through dates (skip the first one to not have a partial day)
-for(d in dates[-1]){
-  # d1 = d + one day
-  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
-  ggsave(paste0(i, '_Daily-Defrost_',d,'.png'),
-         plot = daily_defrost_plot(i, d, d1),
-         path = paste0(wd_out,'/daily_ops/',i, '/daily_defrost/'),
-         width=12, height=4, units='in')
-}
+# for(d in dates[-1]){
+#   # d1 = d + one day
+#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+#   ggsave(paste0(i, '_Daily-Defrost_',d,'.png'),
+#          plot = daily_defrost_plot(i, d, d1),
+#          path = paste0(wd_out,'/daily_ops/',i, '/daily_defrost/'),
+#          width=12, height=4, units='in')
+# }
 
 
 
 # Daily operation power and temperature time series
   # Loop through dates (skip the first one to not have a partial day)
-for(d in dates[-1]){
-  # d1 = d + one day
-  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
-  ggsave(paste0(i, '_Daily-Operation_',d,'.png'),
-         plot = daily_operation_plot(i, d, d1),
-         path = paste0(wd_out,'/daily_ops/',i, '/daily_operation/'),
-         width=12, height=4, units='in')
-}
+# for(d in dates[-1]){
+#   # d1 = d + one day
+#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+#   ggsave(paste0(i, '_Daily-Operation_',d,'.png'),
+#          plot = daily_operation_plot(i, d, d1),
+#          path = paste0(wd_out,'/daily_ops/',i, '/daily_operation/'),
+#          width=12, height=4, units='in')
+# }
 
 
 daily_COP_plot
 # COP, heat and cooling output, and power time series
   # Loop through dates (skip the first one to not have a partial day)
-for(d in dates[-1]){
-  # d1 = d + one day
-  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$site_ID==i]) + 60*60*24), 1, 10)
-  ggsave(paste0(i, '_Daily-COP_',d,'.png'),
-         plot = daily_COP_plot(i, d, d1),
-         path = paste0(wd_out,'/daily_ops/',i, '/daily_COPs/'),
-         width=12, height=4, units='in')
-}
-
+# for(d in dates[-1]){
+#   # d1 = d + one day
+#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+#   ggsave(paste0(i, '_Daily-COP_',d,'.png'),
+#          plot = daily_COP_plot(i, d, d1),
+#          path = paste0(wd_out,'/daily_ops/',i, '/daily_COPs/'),
+#          width=12, height=4, units='in')
+# }
 
 
 
 # Operating mode daily summary
-  ## Make one for winter performance and one for should performance and one for summer performance ##
-  # Look at a time series graph of each day to see fraction of time in each operating mode
-write.csv(df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==sitename]),
-                        operating_mode = ifelse(is.na(operating_mode), "Data Unavailable", operating_mode)) %>%
-            group_by(site_ID, Date, operating_mode) %>%
-            summarize(Mode_Time = n()),
-          file=paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/", sitename, ".csv"),
-          row.names=F)
-OperatingModeTime <- function(site, timestart, timeend){
-  list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/"),pattern="*.csv", full.names=T) %>% 
-    map_df(~read.csv(.)) %>%
-    filter(site_ID == site) %>%
-    ggplot(aes(x=as.POSIXct(Date, format="%F", tz=metadata$Timezone[metadata$site_ID==site]), fill=operating_mode, y=Mode_Time)) +
-    geom_bar(position="fill", stat="identity") +
-    scale_x_datetime(date_breaks = "1 week", 
-                     date_labels = "%F",
-                     limits=c(as.POSIXct(strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$site_ID==site])),
-                              as.POSIXct(strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$site_ID==site])))) +
-    scale_fill_manual(name = "Operating Mode",
-                      breaks = c("Defrost","Heating-HP Only","Heating-Aux Only","Heating-Aux/HP","Cooling","System Off","Data Unavailable"),
-                      values = c("#009E73","#F0E442","#CC3300","#E69F00","#3333FF","#666666","lightgrey")) +
-    labs(title=paste0("Fraction of time in each operating mode per day for site ", site),x="", 
-         y="Fraction of Time") +
-    theme_bw() +
-    theme(panel.border = element_rect(colour = "black",fill=NA),
-          panel.grid.major = element_line(size = 0.9),
-          panel.grid.minor = element_line(size = 0.1),
-          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-          axis.text.x = element_text(family = "Times New Roman", angle=-70, hjust=-0.5),
-          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) 
-}
-# OperatingModeTime(sitename, "12/15/2022 00:00", "3/30/2023 23:59")
-# Print graph to folder--manually adjust date.
-for(site in substr(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/"),pattern="*.csv", full.names=T),
-                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/"),pattern="*.csv", full.names=T)) - 9,
-                   nchar(list.files(path = paste0(wd, "/Graphs/Graph Data/Operating Mode Daily/"),pattern="*.csv", full.names=T)) - 4)){
-  ggsave(paste0(site, '_operating_mode_Percent_Time.png'),
-       plot = OperatingModeTime(site, "12/15/2022 00:00", "3/30/2023 23:59"),
-       path = paste0(wd,'/Graphs/',site, '/'),
+  # Winter 2023 Performance
+ggsave(paste0(i, '_operating_mode_winter_2023_performance.png'),
+       plot = operating_mode_season(i, "12/15/2022 00:00", "3/30/2023 23:59"),
+       path = paste0(wd_out,'/daily ops/',i, '/'),
        width=12, height=4, units='in')
-}
+ggsave(paste0(i, '_operating_mode_spring_2023_performance.png'),
+       plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
+       path = paste0(wd_out,'/daily ops/',i, '/'),
+       width=12, height=4, units='in')
+ggsave(paste0(i, '_operating_mode_summer_2023_performance.png'),
+       plot = operating_mode_season(i, "6/15/2023 00:00", "9/30/2023 23:59"),
+       path = paste0(wd_out,'/daily ops/',i, '/'),
+       width=12, height=4, units='in')
 
 
 
 ## Remove data before data stabilizes for each site.
-## Data removed in the middle of the period should be NA not removed!
 df <- df %>% 
-  # Site 2458CE:
-  # Manufacturer visited site and Mar 21, 2023 8:30am - 5pm
-  filter(site_ID != "2458CE" | datetime_UTC < strptime("2023-03-03 8:30:00", "%F %T", tz="Canada/Eastern") | datetime_UTC > strptime("2023-03-03 17:00:00", "%F %T", tz="Canada/Eastern")) %>%
-  
   # Site 2563EH:
-  # Data doesn't stabilize until Feb 1st, use this day as starting point.
   filter(site_ID != "2563EH" | datetime_UTC >= strptime("2023-02-01", "%F", tz="US/Eastern")) %>%
   
   # Site 2896BR:
-  # Data doesn't stabilize until Feb 1st, use this day as starting point.
   filter(site_ID != "2896BR" | datetime_UTC >= strptime("2023-02-03", "%F", tz="US/Eastern")) %>%
   
   # Site 4228VB 
-  # Appears to be missing Aux power data before Dec 20, 2022, doesn't stabilize until evening of 21st. Use Dec 22nd as starting point.
   filter(site_ID != "4228VB" | datetime_UTC >= strptime("2022-12-22", "%F", tz="US/Mountain")) %>%
-  
-  # Site 5291QJ:
-  # Manufacturer visited site and was playing with controls Mar 21, 2023 8:30am - 5pm
-  filter(site_ID != "5291QJ" | datetime_UTC < strptime("2023-03-03 8:30:00", "%F %T", tz="Canada/Eastern") | datetime_UTC > strptime("2023-03-03 17:00:00", "%F %T", tz="Canada/Eastern")) %>%
   
   # Site 5539NO:
   # All data is present from start.
   
   # Site 6112OH:
-  # Data looks regular starting Feb 14--using this as starting point
   filter(site_ID != "6112OH" | datetime_UTC >= strptime("2023-02-14", "%F", tz="US/Eastern")) %>%
   
   # Site 6950NE:
-  # Data doesn't stabilize until December 10th, use this day as starting point.
   filter(site_ID != "6950NE" | datetime_UTC >= strptime("2022-12-10", "%F", tz="US/Central")) %>%
   
   # Site 8220XE:
-  # Data doesn't stabilize until Dec 12th at 12:00, use Dec 13th as starting point.
   filter(site_ID != "8220XE" | datetime_UTC >= strptime("2022-12-13", "%F", tz="US/Central")) %>%
   
   # Site 8726VB:
-  # Data doesn't stabilize until Feb 11.
   filter(site_ID != "8726VB" | datetime_UTC >= strptime("2023-02-12", "%F", tz="US/Eastern")) %>%
-  # No OA Temp and issues with SAT Mar 09 11AM to Mar 10 12PM. Set key parameters to NA.
-  mutate_at(vars(ODU_pwr_kW, auxheat_pwr_kW, fan_pwr_kW, OA_temp_F, SA_TempF),
-            ~ ifelse(site_ID == "8726VB" & datetime_UTC > strptime("2023-03-09 11:00:00", "%F %T", tz="US/Eastern") & datetime_UTC < strptime("2023-03-10 12:00:00", "%F %T", tz="US/Eastern"), NA, .)) %>%
-  
-  # Site 9944LD:
-  # Data doesn't stabilize until Jan 7th, use this day as starting point.
-  filter(site_ID != "9944LD" | datetime_UTC >= strptime("2023-01-07", "%F", tz="US/Mountain")) %>%
-  # NA Fan power and temperature data from Jan 14 - 16 due to eGauge offline.
-  mutate_at(vars(ODU_pwr_kW, auxheat_pwr_kW, fan_pwr_kW, OA_temp_F, SA_TempF),
-            ~ ifelse(site_ID != "9944LD" & datetime_UTC > strptime("2023-01-14 16:00:00", "%F %T", tz="US/Mountain") & datetime_UTC < strptime("2023-01-16 20:00:00", "%F %T", tz="US/Mountain"), NA, .)) %>%
-  # Missing temp data and HP Power and Aux default to 0 kW from Feb 15 noon to Feb 16 noon
-  mutate_at(vars(ODU_pwr_kW, auxheat_pwr_kW, fan_pwr_kW, OA_temp_F, SA_TempF),
-            ~ ifelse(site_ID != "9944LD" & datetime_UTC > strptime("2023-02-15 12:00:00", "%F %T", tz="US/Mountain") & datetime_UTC < strptime("2023-02-16 12:00:00", "%F %T", tz="US/Mountain"), NA, .))
 
+  # Site 9944LD:
+  filter(site_ID != "9944LD" | datetime_UTC >= strptime("2023-01-07", "%F", tz="US/Mountain"))
+
+
+print(paste("calculated site", i, "writing file",sep = " "))
 
 ## Print csv with calculated columns ##
-write.csv(df, paste0(), row.names = F)
+# write_csv(df, paste0(wd_out, "calculated_data/", i, ".csv"))
+
+print(paste("completed site", i, sep = " "))
 
 }
 

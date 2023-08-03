@@ -88,6 +88,18 @@ for (i in site_IDs){
   print(paste("site", i, "loaded, cleaning commencing", sep = " "))
   
   ## Cleaning steps ----
+  
+    # room4_temp_F, auxheat4_pwr_kW, SA_temp_duct3_F, SA_temp_duct4_F, SA_RH_duct3, SA_RH_duct4 
+    # exists for some dataframes but not others, enter as NA if it does not exist.
+  vars_to_check <- c("room4_temp_F", "auxheat4_pwr_kW", "SA_temp_duct3_F", "SA_temp_duct4_F", "SA_RH_duct3", "SA_RH_duct4")
+  lapply(vars_to_check, function(var_name){
+    if(exists(var_name, where = df)){
+    # leave as is
+  } else {
+    df[[var_name]] <- as.numeric(NA)
+  }})
+  
+  
     # Fill in missing timestamps, if any, with NA data
   df <- fill_missing_timestamps(df, "datetime_UTC", "%F %T", "sec") %>% select(-timestamp) %>%
     # Not sure why, but it is creating 1 NA timestamp
@@ -165,9 +177,29 @@ for (i in site_IDs){
   
   print(paste("site", i, "diagnosted completed, printing aggregated files", sep = " "))
   
-  df_1h <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "hour", data.thresh = 75, statistic = "mean")
-  df_1m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "min", data.thresh = 75, statistic = "mean")
-  df_5m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "5 min", data.thresh = 75, statistic = "mean")
+  df_1h <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "hour", data.thresh = 75, statistic = "mean") %>%
+    rename(datetime_UTC = "date") %>%
+    # timeAverage will drop categorical variables, need to recalculate
+    mutate(site_ID = i,
+              date_local = as.character(date(with_tz(datetime_UTC, tzone=timezone))),
+              hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
+              weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T))
+  
+  df_1m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "min", data.thresh = 75, statistic = "mean") %>%
+    rename(datetime_UTC = "date") %>%
+    # timeAverage will drop categorical variables, need to recalculate
+    mutate(site_ID = i,
+           date_local = as.character(date(with_tz(datetime_UTC, tzone=timezone))),
+           hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
+           weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T))
+  
+  df_5m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "5 min", data.thresh = 75, statistic = "mean") %>%
+    rename(datetime_UTC = "date") %>%
+    # timeAverage will drop categorical variables, need to recalculate
+    mutate(site_ID = i,
+           date_local = as.character(date(with_tz(datetime_UTC, tzone=timezone))),
+           hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
+           weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T))
   
   write_csv(df_1h, paste0(wd, "clean/1_hour/", i, ".csv"))
   write_csv(df_5m , paste0(wd, "clean/5_min/", i, ".csv"))

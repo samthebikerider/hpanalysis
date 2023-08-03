@@ -90,20 +90,14 @@ run_cycle_calc <- function(site, timestamp, operate, mode){
 # Room temperature time series comparison chart
 daily_room_temperature_comparison <- function(site, timestart, timeend){
 
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==site])) %>% 
-    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$site_ID==site]) &
-           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$site_ID==site])) %>%
-    summarize(datetime_UTC = datetime_UTC[1],
-              room1_remp_F = mean(room1_remp_F,na.rm=T),
-              room2_remp_F = mean(room2_remp_F,na.rm=T),
-              room3_remp_F = mean(room3_remp_F,na.rm=T),
-              room4_remp_F = mean(room4_remp_F,na.rm=T),
-              AHU_ambient_temp_F = mean(AHU_ambient_temp_F,na.rm=T)) %>%
+  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
+           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     ggplot(aes(x=as.POSIXct(datetime_UTC))) +
-    geom_line(aes(y=room1_remp_F, color = "Room 1"),size=0.5) + 
-    geom_line(aes(y=room2_remp_F, color = "Room 2"),size=0.5) +
-    geom_line(aes(y=room3_remp_F, color = "Room 3"),size=0.5) +
-    geom_line(aes(y=room4_remp_F, color = "Room 4"),size=0.5) +
+    geom_line(aes(y=room1_temp_F, color = "Room 1"),size=0.5) + 
+    geom_line(aes(y=room2_temp_F, color = "Room 2"),size=0.5) +
+    geom_line(aes(y=room3_temp_F, color = "Room 3"),size=0.5) +
+    geom_line(aes(y=room4_temp_F, color = "Room 4"),size=0.5) +
     geom_line(aes(y=AHU_ambient_temp_F, color = "AHU Ambient"),size=0.5) +
     scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0, 200, by=1)) +
     scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
@@ -122,9 +116,9 @@ daily_room_temperature_comparison <- function(site, timestart, timeend){
 # Supply and return temperature time series comparison chart
 daily_supply_temperature_comparison <- function(site, timestart, timeend){
 
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==site])) %>% 
-    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$site_ID==site]) &
-           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$site_ID==site])) %>%
+  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
+           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     summarize(datetime_UTC = datetime_UTC[1],
               SA_temp_duct1_F = mean(SA_temp_duct1_F,na.rm=T),
               SA_temp_duct2_F = mean(SA_temp_duct2_F,na.rm=T),
@@ -139,7 +133,7 @@ daily_supply_temperature_comparison <- function(site, timestart, timeend){
     geom_line(aes(y=RA_temp_F, color = "RA"),size=0.5) + 
     scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0,200, by=1)) +
     scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
-    labs(title=paste0("Supply temperature daily plot for site ", sitename),x="",y="Temperature (F)") +
+    labs(title=paste0("Supply temperature daily plot for site ", site),x="",y="Temperature (F)") +
     theme_bw() +
     theme(panel.border = element_rect(colour = "black",fill=NA),
           panel.grid.major = element_line(size = 0.9),
@@ -154,11 +148,11 @@ daily_supply_temperature_comparison <- function(site, timestart, timeend){
 # Investigate defrost cycles for every day
 daily_defrost_plot <- function(site, timestart, timeend){
 
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==site]),
+  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
                 # If defrost mode, set marker to 5 (arbitrary number) to show activity
                 Defrost = ifelse(operating_mode=="Defrost", 5, NA)) %>% 
-    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$site_ID==site]) &
-           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$site_ID==site])) %>%
+    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
+           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     ggplot(aes(x=as.POSIXct(datetime_UTC))) +
     geom_line(aes(y=ODU_pwr_kW, color = "Outdoor Unit Power"),size=0.3) + 
     geom_line(aes(y=fan_pwr_kW, color = "Supply Fan Power"),size=0.3) +
@@ -187,9 +181,9 @@ daily_defrost_plot <- function(site, timestart, timeend){
 # Power time series comparison chart with OAT and SAT
 daily_operation_plot <- function(site, timestart, timeend){
 
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==site])) %>% 
-    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$site_ID==site]) &
-           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$site_ID==site])) %>%
+  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
+           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     ggplot(aes(x=as.POSIXct(datetime_UTC))) +
     geom_line(aes(y=OA_temp_F/5, color = "Outdoor Air Temperature"),size=0.3) + 
     geom_line(aes(y=SA_temp_F/5, color = "Supply Air Temperature"),size=0.3) +
@@ -216,9 +210,9 @@ daily_operation_plot <- function(site, timestart, timeend){
 # COP time series comparison chart with SAT and RAT
 daily_COP_plot <- function(site, timestart, timeend){
 
-  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$site_ID==site])) %>% 
-    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$site_ID==site]) &
-           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$site_ID==site])) %>%
+  df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
+    filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
+           datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
     summarize(datetime_UTC = datetime_UTC[1],
               SA_Temp_F=mean(SA_Temp_F, na.rm=T),
               RA_temp_F=mean(RA_temp_F, na.rm=T),
@@ -255,5 +249,36 @@ daily_COP_plot <- function(site, timestart, timeend){
           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
     guides(color=guide_legend(override.aes=list(size=3)))
 }
+
+
+# Operating mode summary for each day in a large timeframe
+operating_mode_season <- function(site, timestart, timeend){
+  df %>%
+    mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
+           operating_mode = ifelse(is.na(operating_mode), "Data Unavailable", operating_mode)) %>%
+    group_by(date_local, operating_mode) %>%
+    summarize(Mode_Time = n()) %>%
+    ggplot(aes(x=as.POSIXct(date_local, format="%F", tz=metadata$Timezone[metadata$Site_ID==site]), fill=operating_mode, y=Mode_Time)) +
+    geom_bar(position="fill", stat="identity") +
+    scale_x_datetime(date_breaks = "1 week", 
+                     date_labels = "%F",
+                     limits=c(as.POSIXct(strptime(timestart,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])),
+                              as.POSIXct(strptime(timeend,"%m/%d/%Y %H:%M", tz=metadata$Timezone[metadata$Site_ID==site])))) +
+    scale_fill_manual(name = "Operating Mode",
+                      breaks = c("Defrost","Heating-HP Only","Heating-Aux Only","Heating-Aux/HP","Cooling","System Off","Data Unavailable"),
+                      values = c("#009E73","#F0E442","#CC3300","#E69F00","#3333FF","#666666","lightgrey")) +
+    labs(title=paste0("Fraction of time in each operating mode per day for site ", site),x="", 
+         y="Fraction of Time") +
+    theme_bw() +
+    theme(panel.border = element_rect(colour = "black",fill=NA),
+          panel.grid.major = element_line(size = 0.9),
+          panel.grid.minor = element_line(size = 0.1),
+          plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
+          axis.text.x = element_text(family = "Times New Roman", angle=-70, hjust=-0.5),
+          axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
+          axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) 
+}
+
+
 
 
