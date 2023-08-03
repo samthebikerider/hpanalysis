@@ -99,7 +99,7 @@ daily_room_temperature_comparison <- function(site, timestart, timeend){
     geom_line(aes(y=room3_temp_F, color = "Room 3"),size=0.5) +
     geom_line(aes(y=room4_temp_F, color = "Room 4"),size=0.5) +
     geom_line(aes(y=AHU_ambient_temp_F, color = "AHU Ambient"),size=0.5) +
-    scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0, 200, by=1)) +
+    scale_y_continuous(breaks = seq(0,200, by=10), minor_breaks = seq(0, 200, by=1), limits = c(55, 85)) +
     scale_color_manual(name = "", values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")) +
     labs(title=paste0("Room temperature daily plot for site ", site),x="",y="Temperature (F)") +
     theme_bw() +

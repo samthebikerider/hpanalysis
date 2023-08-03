@@ -33,11 +33,11 @@ if(Sys.info()[7] == "rose775"){
     wd <- "/Volumes/cchpc/"
     # Need output wd location ("R:/" for Kevin)
     # wd_out <- 
-} else if(Sys.info()[7] = "keen930"){
+} else if(Sys.info()[7] == "keen930"){
     source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R") 
     wd <- "Q:/"
     wd_out <- "R:/"
-} else if(Sys.info()[7] = "zhan682"){
+} else if(Sys.info()[7] == "zhan682"){
     ## Yiting to add for her file paths 
 }
 

@@ -4,7 +4,7 @@
 # Created on: 2023-08-02
 # Description: This script pulls the data files created
 # by the "cleaning" file and adds calculated columns 
-# and prints out diagnostic graphs.
+# and prints out daily diagnostic graphs.
 #####################################################
 # Todo:
 #
@@ -260,6 +260,7 @@ df <- df %>%
       (1 + supply_humidity_ratio))
 )
 
+print(paste("completed calculations for site", i, "now creating diagnostic graphs",sep = " "))
 
 
 ### Diagnostic Graphs ----
@@ -270,14 +271,14 @@ dates <- unique(df$date_local)
 
 # Room temperature time series
   # Loop through dates (skip the first one to not have a partial day)
-for(d in dates[-1]){
-  # d1 = d + one day
-  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
-  ggsave(paste0(i, '_Daily-Room-Temp_',d,'.png'),
-         plot = daily_room_temperature_comparison(i, d, d1),
-         path = paste0(wd_out,'/daily_ops/',i, '/daily_room_temps/'),
-         width=12, height=4, units='in')
-}
+# for(d in dates[-1]){
+#   # d1 = d + one day
+#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+#   ggsave(paste0(i, '_Daily-Room-Temp_',d,'.png'),
+#          plot = daily_room_temperature_comparison(i, d, d1),
+#          path = paste0(wd_out,'daily_ops/',i, '/daily_room_temps/'),
+#          width=12, height=4, units='in')
+# }
 
 
 
@@ -288,7 +289,7 @@ for(d in dates[-1]){
 #   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
 #   ggsave(paste0(i, '_Daily-Supply-Temp_',d,'.png'),
 #          plot = daily_supply_temperature_comparison(i, d, d1),
-#          path = paste0(wd_out,'/daily_ops/',i, '/daily_SATs/'),
+#          path = paste0(wd_out,'daily_ops/',i, '/daily_SATs/'),
 #          width=12, height=4, units='in')
 # }
 
@@ -301,7 +302,7 @@ for(d in dates[-1]){
 #   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
 #   ggsave(paste0(i, '_Daily-Defrost_',d,'.png'),
 #          plot = daily_defrost_plot(i, d, d1),
-#          path = paste0(wd_out,'/daily_ops/',i, '/daily_defrost/'),
+#          path = paste0(wd_out,'daily_ops/',i, '/daily_defrost/'),
 #          width=12, height=4, units='in')
 # }
 
@@ -314,12 +315,12 @@ for(d in dates[-1]){
 #   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
 #   ggsave(paste0(i, '_Daily-Operation_',d,'.png'),
 #          plot = daily_operation_plot(i, d, d1),
-#          path = paste0(wd_out,'/daily_ops/',i, '/daily_operation/'),
+#          path = paste0(wd_out,'daily_ops/',i, '/daily_operation/'),
 #          width=12, height=4, units='in')
 # }
 
 
-daily_COP_plot
+
 # COP, heat and cooling output, and power time series
   # Loop through dates (skip the first one to not have a partial day)
 # for(d in dates[-1]){
@@ -327,7 +328,7 @@ daily_COP_plot
 #   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
 #   ggsave(paste0(i, '_Daily-COP_',d,'.png'),
 #          plot = daily_COP_plot(i, d, d1),
-#          path = paste0(wd_out,'/daily_ops/',i, '/daily_COPs/'),
+#          path = paste0(wd_out,'daily_ops/',i, '/daily_COPs/'),
 #          width=12, height=4, units='in')
 # }
 
@@ -335,18 +336,18 @@ daily_COP_plot
 
 # Operating mode daily summary
   # Winter 2023 Performance
-ggsave(paste0(i, '_operating_mode_winter_2023_performance.png'),
-       plot = operating_mode_season(i, "12/15/2022 00:00", "3/30/2023 23:59"),
-       path = paste0(wd_out,'/daily ops/',i, '/'),
-       width=12, height=4, units='in')
-ggsave(paste0(i, '_operating_mode_spring_2023_performance.png'),
-       plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
-       path = paste0(wd_out,'/daily ops/',i, '/'),
-       width=12, height=4, units='in')
-ggsave(paste0(i, '_operating_mode_summer_2023_performance.png'),
-       plot = operating_mode_season(i, "6/15/2023 00:00", "9/30/2023 23:59"),
-       path = paste0(wd_out,'/daily ops/',i, '/'),
-       width=12, height=4, units='in')
+# ggsave('operating_mode_winter_2023_performance.png',
+#        plot = operating_mode_season(i, "12/15/2022 00:00", "3/30/2023 23:59"),
+#        path = paste0(wd_out,'daily ops/',i, '/'),
+#        width=12, height=4, units='in')
+# ggsave('operating_mode_spring_2023_performance.png',
+#        plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
+#        path = paste0(wd_out,'daily ops/',i, '/'),
+#        width=12, height=4, units='in')
+# ggsave('operating_mode_summer_2023_performance.png',
+#        plot = operating_mode_season(i, "6/15/2023 00:00", "9/30/2023 23:59"),
+#        path = paste0(wd_out,'daily ops/',i, '/'),
+#        width=12, height=4, units='in')
 
 
 
@@ -380,10 +381,11 @@ df <- df %>%
   filter(site_ID != "9944LD" | datetime_UTC >= strptime("2023-01-07", "%F", tz="US/Mountain"))
 
 
-print(paste("calculated site", i, "writing file",sep = " "))
+print(paste("completed diagnostic graphs for site", i, "now writing file",sep = " "))
 
 ## Print csv with calculated columns ##
-# write_csv(df, paste0(wd_out, "calculated_data/", i, ".csv"))
+write_csv(df, paste0(wd_out, "calculated_data/", i, ".csv"))
+rm(df)
 
 print(paste("completed site", i, sep = " "))
 
