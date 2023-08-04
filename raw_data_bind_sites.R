@@ -18,9 +18,9 @@ rm(list = ls())
 # packages
 if(Sys.info()[7] == "rose775"){
   source("/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/ccHP/hpanalysis/functions_for_use.R")
-} else if(Sys.info()[7] = "keen930"){
+} else if(Sys.info()[7] == "keen930"){
   source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R")
-} else if(Sys.info()[7] = "zhan682"){
+} else if(Sys.info()[7] == "zhan682"){
   ## Yiting to update filepath ##
   source("C:/Users/zhan682/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R")
 }
@@ -36,6 +36,9 @@ e350_min_wd <- "/Volumes/cchpc/raw2/e350/min/"
 e350_sec_wd <- "/Volumes/cchpc/raw2/e350/sec/"
 michaels_wd <- "/Volumes/cchpc/raw2/michaels/"
 sites_wd <- "/Volumes/cchpc/raw2/sites/"
+e350_min_sites_wd <- "/Volumes/cchpc/raw2/sites/e350_min"
+e350_sec_sites_wd <- "/Volumes/cchpc/raw2/sites/e350_sec"
+
 #####################################################
 
 
@@ -65,7 +68,7 @@ for (i in e350_sites){
                "ReversingValveSignal [V]") # list of cols used in agg
   df <- subset(df, select = names(df) %in% to_keep) # keep only cols  used in agg
   setwd("~") # reset wd
-  setwd(sites_wd) # set wd to sites folder for saving single site file
+  setwd(e350_sec_sites_wd) # set wd to sites folder for saving single site file
   write_csv(df, paste("site_", i, "_second.csv", sep = "")) # write csv of single file for site
   
   rm(df) # remove current df from wd to clear up space
@@ -78,14 +81,14 @@ for (i in e350_sites){
   setwd(e350_min_wd) # set wd to e350 raw data
   df <- list.files(path = e350_min_wd, pattern = i) %>%
     map_df(~fread(.)) # read all files for the current site iteration and bind_rows to single df
-  to_keep <- c("Timestamp (UTC)", "OA_Temp [F]", "OA_RH [%]", "SA_Blower_Temp [F]", "SA_Blower_RH [%]",
-               "SA_Duct1_Temp [F]", "SA_Duct1_RH [%]", "SA_Duct2_Temp [F]", "SA_Duct2_RH [%]",
-               "SA_Duct3_Temp [F]", "SA_Duct3_RH [%]", "SA_Duct4_Temp [F]", "SA_Duct4_RH [%]",
-               "RA_Temp [F]", "RA_RH [%]", "AHU_Ambient_Temp [F]", "AHU_RH [%]", "Room1_Temp [F]", "Room1_RH [%]",
-               "Room2_Temp [F]", "Room2_RH [%]", "Room3_Temp [F]", "Room3_RH [%]", "Room4_Temp [F]", "Room4_RH [%]") # list of cols used in agg
-  df <- subset(df, select = names(df) %in% to_keep) # keep only cols  used in agg
+  # to_keep <- c("Timestamp (UTC)", "OA_Temp [F]", "OA_RH [%]", "SA_Blower_Temp [F]", "SA_Blower_RH [%]",
+  #              "SA_Duct1_Temp [F]", "SA_Duct1_RH [%]", "SA_Duct2_Temp [F]", "SA_Duct2_RH [%]",
+  #              "SA_Duct3_Temp [F]", "SA_Duct3_RH [%]", "SA_Duct4_Temp [F]", "SA_Duct4_RH [%]",
+  #              "RA_Temp [F]", "RA_RH [%]", "AHU_Ambient_Temp [F]", "AHU_RH [%]", "Room1_Temp [F]", "Room1_RH [%]",
+  #              "Room2_Temp [F]", "Room2_RH [%]", "Room3_Temp [F]", "Room3_RH [%]", "Room4_Temp [F]", "Room4_RH [%]") # list of cols used in agg
+  # df <- subset(df, select = names(df) %in% to_keep) # keep only cols  used in agg
   setwd("~") # reset wd
-  setwd(sites_wd) # set wd to sites folder for saving single site file
+  setwd(e350_min_sites_wd) # set wd to sites folder for saving single site file
   write_csv(df, paste("site_", i, "_minute.csv", sep = "")) # write csv of single file for site
   
   rm(df) # remove current df from wd to clear up space
@@ -100,19 +103,11 @@ for (i in e350_sites){
 setwd("~") # reset wd
 setwd(michaels_wd) # set wd to michaels raw data
 
-michaels_files <- list.files()
-michaels_site_IDs <- unique(substr(michaels_files, 14, 19))
-
 for (i in michaels_site_IDs){
   setwd("~") # reset wd
   setwd(michaels_wd) # set wd to michaels raw data
   df <- list.files(path = michaels_wd, pattern = i) %>%
            map_df(~fread(.)) # read all files for the current site iteration and bind_rows to single df
-  
-  # KK: I can sum aux power in the cleaning phase ##
-  # df <- df %>%
-  #   rowwise() %>% 
-  #   mutate(Aux_Power = sum(c_across(colnames(df)[colnames(df) %in% c("Aux1_Power", "Aux2_Power", "Aux3_Power", "Aux4_Power")]), na.rm = T)) # sum for aux power
   
   to_keep <- c("index", "HP_Power", "Fan_Power", "AHU_Power",
                "Aux1_Power", "Aux2_Power", "Aux3_Power", "Aux4_Power",
@@ -120,8 +115,7 @@ for (i in michaels_site_IDs){
                "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",
                "SA4_TempF", "SA4_RH", "RA_TempF", "RA_RH", "AHU_TempF", "AHU_RH",
                "Room1_TempF", "Room1_RH","Room2_TempF", "Room2_RH", "Room3_TempF",
-               "Room3_RH", "Room4_TempF", "Room4_RH", "RV_Volts", "Aux1_Power",
-               "Aux2_Power", "Aux3_Power", "Aux4_Power") # list of cols used in agg
+               "Room3_RH", "Room4_TempF", "Room4_RH", "RV_Volts") # list of cols used in agg
   df <- subset(df, select = names(df) %in% to_keep) # keep only cols  used in agg
   
   setwd("~") # reset wd
