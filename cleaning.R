@@ -46,10 +46,12 @@ if(Sys.info()[7] == "rose775"){
 
 
 # Read data
-site_IDs <- unique(substr(list.files(path = paste0(wd, "raw2/sites/")), 6, 11))
+  ## First two indexes are folder names, just need three to the end
+site_IDs <- unique(substr(list.files(path = paste0(wd, "raw2/sites/")), 6, 11))[-2][-1]
 metadata <- read_csv(file = paste0(wd, "site-metadata.csv"))
 
 ## TODO: Add process for E350 files
+  ## Need to re-do 9944LD, 8726VB and 8220XE once Sam shortens the file size ##
 
 for (i in site_IDs){
   print(paste("beginning site", i, sep = " "))
@@ -57,18 +59,19 @@ for (i in site_IDs){
   ## Load data from 'sites' folder ----
   df <- list.files(path = paste0(wd, "raw2/sites"), pattern = i, full.names = T) %>%
     map_df(~read_csv(.)) %>%
-    mutate(site_ID = i,
-           datetime_UTC =  force_tz(index, tzone = "UTC")) %>%
+    mutate(site_ID = i)
+  
+  # Establish timezone as UTC (R defaults to local); Michaels and E350 format different
+  if(exists("index", where=df)){
+    df <- df %>% mutate(datetime_UTC =  force_tz(index, tzone = "UTC")) %>%
+      select(-index)
+  } else if(exists("Timestamp (UTC)", where=df)){
+    df <- df %>% mutate(datetime_UTC =  force_tz(`Timestamp (UTC)`, tzone = "UTC")) %>%
+      select(-`Timestamp (UTC)`)
+  }
+  
     
-    ## Remove the "select" once Sam runs this in his script ##
-    select(any_of(c("datetime_UTC", "site_ID", "index", "HP_Power", "Fan_Power", "AHU_Power", "Aux_Power",
-                    "OA_TempF", "OA_RH", "Aux1_Power", "Aux2_Power", "Aux3_Power","Aux4_Power",
-                    "SA1_TempF", "SA1_RH", "SA2_TempF", "SA2_RH", "SA3_TempF", "SA3_RH",
-                    "SA4_TempF", "SA4_RH", "RA_TempF", "RA_RH", "AHU_TempF", "AHU_RH",
-                    "Room1_TempF", "Room1_RH","Room2_TempF", "Room2_RH", "Room3_TempF",
-                    "Room3_RH", "Room4_TempF", "Room4_RH", "RV_Volts"))) %>%
-    select(-index) %>%
-    rename(any_of(c(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
+  df <- df %>% rename(any_of(c(ODU_pwr_kW = "HP_Power", fan_pwr_kW = "Fan_Power",
             AHU_pwr_kW = "AHU_Power", 
             auxheat1_pwr_kW = "Aux1_Power", auxheat2_pwr_kW = "Aux2_Power", 
             auxheat3_pwr_kW = "Aux3_Power", auxheat4_pwr_kW = "Aux4_Power",
@@ -86,6 +89,12 @@ for (i in site_IDs){
             room4_temp_F = "Room4_TempF", room4_RH = "Room4_RH",
             reversing_valve_signal_V = "RV_Volts"))) 
   
+  # Create auxheat4_pwr_kW for the sites that do not have it
+  if(exists("auxheat4_pwr_kW", where=df)){
+    # Pass
+  } else {
+    df <- df %>% mutate(auxheat4_pwr_kW = as.numeric(NA))
+  }
   
   print(paste("site", i, "loaded, cleaning commencing", sep = " "))
   
@@ -204,7 +213,7 @@ for (i in site_IDs){
            weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T))
   
   write_csv(df_1h, paste0(wd, "clean/1_hour/", i, ".csv"))
-  write_csv(df_5m , paste0(wd, "clean/5_min/", i, ".csv"))
+  write_csv(df_5m, paste0(wd, "clean/5_min/", i, ".csv"))
   write_csv(df_1m, paste0(wd, "clean/1_min/", i, ".csv"))
   ## Removing 1-second data for now because it takes too long ##
   # write_csv(df, paste0(wd, "clean/1_sec/", i, ".csv"))
