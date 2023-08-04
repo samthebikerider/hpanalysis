@@ -118,14 +118,14 @@ sites <- c(
   # "2896BR",
   # "6112OH",
   # "6950NE",
-  # "7083LM",  # Still no data for this site.
+  # "7083LM",  # data linked separately for winter period
   # "8220XE",
-  "8726VB",
+  # "8726VB",
   # "9944LD",
   # "4228VB",
   # "5539NO",
   # "5291QJ",
-  # "2458CE",
+  "2458CE",
   "")
 timeframe <- c(strptime("12/10/2022", format="%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==sites[1]]), 
                strptime("4/01/2023", format="%m/%d/%Y", tz=metadata$Timezone[metadata$Site_ID==sites[1]]))
