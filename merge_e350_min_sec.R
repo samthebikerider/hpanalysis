@@ -56,10 +56,10 @@ df <- left_join(df_sec_full, df_min_full, by = "timestamp")
 
 
 
-for (i in sites){
-  setwd(e350_sec_sites_wd)
-  df_sec <- read_csv(paste("site_", i, "_second.csv", sep = ""))
-  
-  setwd(e350_min_sites_wd)
-  df_min <- read.csv(paste("site_", i, "_minute.csv", sep = ""))
-}
+# for (i in sites){
+#   setwd(e350_sec_sites_wd)
+#   df_sec <- read_csv(paste("site_", i, "_second.csv", sep = ""))
+#   
+#   setwd(e350_min_sites_wd)
+#   df_min <- read.csv(paste("site_", i, "_minute.csv", sep = ""))
+# }
