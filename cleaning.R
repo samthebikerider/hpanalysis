@@ -102,10 +102,10 @@ for (i in site_IDs){
   
     # room4_temp_F, auxheat4_pwr_kW, SA_temp_duct3_F, SA_temp_duct4_F, SA_RH_duct3, SA_RH_duct4 
     # exists for some dataframes but not others, enter as NA if it does not exist.
-  vars_to_check <- c("room4_temp_F", "auxheat4_pwr_kW", "SA_temp_duct3_F", "SA_temp_duct4_F", "SA_RH_duct3", "SA_RH_duct4")
+  vars_to_check <- c("room4_temp_F", "room4_RH", "auxheat4_pwr_kW", "SA_temp_duct3_F", "SA_temp_duct4_F", "SA_RH_duct3", "SA_RH_duct4")
   lapply(vars_to_check, function(var_name){
     if(exists(var_name, where = df)){
-    # leave as is
+      df[[var_name]] <- df[[var_name]]
   } else {
     df[[var_name]] <- as.numeric(NA)
   }})
@@ -164,7 +164,7 @@ for (i in site_IDs){
   print(paste("site", i, "cleaned, commencing diagnostics", sep = " "))
   
   
-  ## Diagnostics charts and tables ----
+  ## Diagnostics tables to show missing/NA data ----
   
   # NA Data Summary
   write.csv(
