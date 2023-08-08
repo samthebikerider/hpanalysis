@@ -17,8 +17,16 @@ rm(list = ls())
 # packages
 if(Sys.info()[7] == "rose775"){
   source("/Users/rose775/Library/CloudStorage/OneDrive-PNNL/Desktop/Projects/ccHP/hpanalysis/functions_for_use.R")
+  e350_min_sites_wd <- "/Volumes/cchpc/raw2/sites/e350_min/"
+  e350_sec_sites_wd <- "/Volumes/cchpc/raw2/sites/e350_sec/"
+  sites_wd <- "/Volumes/cchpc/raw2/sites/"
+  
 } else if(Sys.info()[7] == "keen930"){
   source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R")
+  e350_min_sites_wd <- "Q:/raw2/sites/e350_min/"
+  e350_sec_sites_wd <- "Q:/raw2/sites/e350_sec/"
+  sites_wd <- "Q:/raw2/sites/sites/"
+  
 } else if(Sys.info()[7] == "zhan682"){
   source("C:/Users/zhan682/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R")
 }
@@ -26,9 +34,6 @@ library(tidyverse)
 library(lubridate)
 
 # vars
-e350_min_sites_wd <- "/Volumes/cchpc/raw2/sites/e350_min/"
-e350_sec_sites_wd <- "/Volumes/cchpc/raw2/sites/e350_sec/"
-sites_wd <- "/Volumes/cchpc/raw2/sites/"
 
 setwd(e350_min_sites_wd) 
 sites <- list.files(pattern="*.csv")
