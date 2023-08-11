@@ -51,21 +51,28 @@ for (i in site_IDs){
   ## Load data from 'clean' folder ----
     # Pulling in 1-min for now, but should change to 1-sec with RC
   df <- list.files(path = paste0(wd, "clean/1_min/"), pattern = i, full.names = T) %>%
-    map_df(~read_csv(.)) %>%
-    ## TODO: once we get E350 data, integrate defrost_on_1 to rv_volts column in cleaning.R ##
-    mutate(DEFROST_ON_1 = NA)
+    map_df(~read_csv(.))
   
 
   
 ## Calculate columns 
 
-df <- df %>% mutate(
-  # Add column that determines the number of aux legs that are active at every timestamp
+# Add column that determines the number of aux legs that are active at every timestamp
+  # Use the auxheat legs for Michaels; E350 will need to infer based on power level  
+if(exists(auxheat1_pwr_kW, where=df)){
+  df <- df %>% mutate(
   number_aux_legs = ifelse(sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==4, 4,
                            ifelse(sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==3, 3,
                                   ifelse(sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==2, 2,
                                          sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==1, 1,
                                          0))))
+  } else {
+    df <- df %>% mutate(
+      number_aux_legs = ifelse(auxheat_pwr_kW > 16, 4,
+                               ifelse(auxheat_pwr_kW > 11, 3,
+                                      ifelse(auxheat_pwr_kW > 6, 2,
+                                             ifelse(auxheat_pwr_kW > 0.1, 1, 0)))))
+  }
 
 
 ## Operating mode ##
@@ -84,14 +91,12 @@ df <- df %>% mutate(operating_mode =
   # 2. Identify defrost mode                      
       # For Michaels sites, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
       # NOTE: It looks like site 7083LM, greater than 20V means heating mode, and between 0.4 and 0.6V is system off, and 0.8 to 1.1V might be defrost
-    ifelse(site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB") & reversing_valve_signal_V > 25 & ODU_pwr_kW > 0.1, "Defrost",
-    ifelse(site_ID == "7083LM" & reversing_valve_signal_V > 0.8 & reversing_valve_signal_V < 1.1 & ODU_pwr_kW > 0.1, "Defrost", 
+    ifelse(site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB") & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V > 25 & ODU_pwr_kW > 0.1, "Defrost",
+    ifelse(site_ID == "7083LM" & reversing_valve_signal_V > 0.8 & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V < 1.1 & ODU_pwr_kW > 0.1, "Defrost", 
       # For site 4228VB, Trane provided RV data but there are some gaps which require secondary indicators
-    ifelse(site_ID == "4228VB" & 
-             (datetime_UTC >= strptime("2023-01-16", "%F", tz="US/Mountain") & datetime_UTC <= strptime("2023-01-30","%F",tz="US/Mountain") |
-              datetime_UTC >= strptime("2023-02-22", "%F", tz="US/Mountain") & datetime_UTC <= strptime("2023-03-04","%F",tz="US/Mountain")) &
+    ifelse(site_ID == "4228VB" & is.na(reversing_valve_signal_V) &
              auxheat_pwr_kW > 4.0 & ODU_pwr_kW > 0.1 & ODU_pwr_kW < 1.25 & fan_pwr_kW > 0.35, "Defrost",
-        ifelse(site_ID == "4228VB" & !is.na(DEFROST_ON_1) & DEFROST_ON_1==1 & ODU_pwr_kW > 0.1, "Defrost",
+        ifelse(site_ID == "4228VB" & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V==1 & ODU_pwr_kW > 0.1, "Defrost",
       # For site 5539NO, RV between 0.6 V and 3.0 V indicates defrost mode
     ifelse(site_ID == "5539NO" & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V > 0.6 & reversing_valve_signal_V < 3 & ODU_pwr_kW > 0.1, "Defrost",
       # For site 2458CE, secondary indicators are used
@@ -253,66 +258,66 @@ dates <- unique(df$date_local)
 
 # Room temperature time series
   # Loop through dates (skip the first one to not have a partial day)
-# for(d in dates[-1]){
-#   # d1 = d + one day
-#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
-#   ggsave(paste0(i, '_Daily-Room-Temp_',d,'.png'),
-#          plot = daily_room_temperature_comparison(i, d, d1),
-#          path = paste0(wd_out,'daily_ops/',i, '/daily_room_temps/'),
-#          width=12, height=4, units='in')
-# }
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-Room-Temp_',d,'.png'),
+         plot = daily_room_temperature_comparison(i, d, d1),
+         path = paste0(wd_out,'daily_ops/',i, '/daily_room_temps/'),
+         width=12, height=4, units='in')
+}
 
 
 
 # Supply temperature time series
   # Loop through dates (skip the first one to not have a partial day)
-# for(d in dates[-1]){
-#   # d1 = d + one day
-#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
-#   ggsave(paste0(i, '_Daily-Supply-Temp_',d,'.png'),
-#          plot = daily_supply_temperature_comparison(i, d, d1),
-#          path = paste0(wd_out,'daily_ops/',i, '/daily_SATs/'),
-#          width=12, height=4, units='in')
-# }
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-Supply-Temp_',d,'.png'),
+         plot = daily_supply_temperature_comparison(i, d, d1),
+         path = paste0(wd_out,'daily_ops/',i, '/daily_SATs/'),
+         width=12, height=4, units='in')
+}
 
 
 
 # Defrost cycle time series
   # Loop through dates (skip the first one to not have a partial day)
-# for(d in dates[-1]){
-#   # d1 = d + one day
-#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
-#   ggsave(paste0(i, '_Daily-Defrost_',d,'.png'),
-#          plot = daily_defrost_plot(i, d, d1),
-#          path = paste0(wd_out,'daily_ops/',i, '/daily_defrost/'),
-#          width=12, height=4, units='in')
-# }
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-Defrost_',d,'.png'),
+         plot = daily_defrost_plot(i, d, d1),
+         path = paste0(wd_out,'daily_ops/',i, '/daily_defrost/'),
+         width=12, height=4, units='in')
+}
 
 
 
 # Daily operation power and temperature time series
   # Loop through dates (skip the first one to not have a partial day)
-# for(d in dates[-1]){
-#   # d1 = d + one day
-#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
-#   ggsave(paste0(i, '_Daily-Operation_',d,'.png'),
-#          plot = daily_operation_plot(i, d, d1),
-#          path = paste0(wd_out,'daily_ops/',i, '/daily_operation/'),
-#          width=12, height=4, units='in')
-# }
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-Operation_',d,'.png'),
+         plot = daily_operation_plot(i, d, d1),
+         path = paste0(wd_out,'daily_ops/',i, '/daily_operation/'),
+         width=12, height=4, units='in')
+}
 
 
 
 # COP, heat and cooling output, and power time series
   # Loop through dates (skip the first one to not have a partial day)
-# for(d in dates[-1]){
-#   # d1 = d + one day
-#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
-#   ggsave(paste0(i, '_Daily-COP_',d,'.png'),
-#          plot = daily_COP_plot(i, d, d1),
-#          path = paste0(wd_out,'daily_ops/',i, '/daily_COPs/'),
-#          width=12, height=4, units='in')
-# }
+for(d in dates[-1]){
+  # d1 = d + one day
+  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+  ggsave(paste0(i, '_Daily-COP_',d,'.png'),
+         plot = daily_COP_plot(i, d, d1),
+         path = paste0(wd_out,'daily_ops/',i, '/daily_COPs/'),
+         width=12, height=4, units='in')
+}
 
 
 
@@ -322,10 +327,10 @@ dates <- unique(df$date_local)
 #        plot = operating_mode_season(i, "12/15/2022 00:00", "3/30/2023 23:59"),
 #        path = paste0(wd_out,'daily ops/',i, '/'),
 #        width=12, height=4, units='in')
-# ggsave('operating_mode_spring_2023_performance.png',
-#        plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
-#        path = paste0(wd_out,'daily ops/',i, '/'),
-#        width=12, height=4, units='in')
+ggsave('operating_mode_spring_2023_performance.png',
+       plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
+       path = paste0(wd_out,'daily ops/',i, '/'),
+       width=12, height=4, units='in')
 # ggsave('operating_mode_summer_2023_performance.png',
 #        plot = operating_mode_season(i, "6/15/2023 00:00", "9/30/2023 23:59"),
 #        path = paste0(wd_out,'daily ops/',i, '/'),

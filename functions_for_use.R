@@ -42,28 +42,16 @@ fill_missing_timestamps <- function(df, timestamp_col, format, interval){
   # The "mode" input should be "Heating" or "Defrost".
   # The script is set up to calculate EITHER heating run time or defrost runtime 
   # (or any other mode, e.g., cooling)
-run_cycle_calc <- function(site, timestamp, operate, mode){
+run_cycle_calc <- function(timestamp, operate, mode){
   
   index <- which(operate == mode)[1]         # First row in heating/defrost mode
   ts <- timestamp[index]                     # Timestamp at first non-NA row
-  cycle <- rep(NA, length(site))             # Initialize vector for cycle runtimes
-  ct <- site[index]                          # Initialize counter to detect new site
+  cycle <- rep(NA, length(timestamp))        # Initialize vector for cycle runtimes
   track <- TRUE                              # Tracker for new cycle
   
-  for(row in (index+1):length(site)){
+  for(row in (index+1):length(timestamp)){
     
-    if(site[row] != ct){
-      # If there is a new site, do not calculate previous cycle. Update 'ct' with new site.
-      ct <- site[row]                        # Update record of site
-      
-      if(operate[row] != mode | is.na(operate[row])){
-        track <- FALSE                       # Timestamp will be reset once it re-enters heat/defrost mode
-      } else {
-        ts <- timestamp[row]                 # Reset timestamp
-        track <- TRUE
-      }
-      
-    } else if(is.na(operate[row])){
+    if(is.na(operate[row])){
       next     # Skip NA rows, I think this makes the most sense. 
       # Other option is to end cycle if it was in heating before the NA.
       
@@ -119,12 +107,6 @@ daily_supply_temperature_comparison <- function(site, timestart, timeend){
   df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site])) %>% 
     filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
            datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-    summarize(datetime_UTC = datetime_UTC[1],
-              SA_temp_duct1_F = mean(SA_temp_duct1_F,na.rm=T),
-              SA_temp_duct2_F = mean(SA_temp_duct2_F,na.rm=T),
-              SA_temp_duct3_F = mean(SA_temp_duct3_F,na.rm=T),
-              SA_temp_duct4_F = mean(SA_temp_duct4_F,na.rm=T),
-              RA_temp_F = mean(RA_temp_F, na.rm = T)) %>%
     ggplot(aes(x=as.POSIXct(datetime_UTC))) +
     geom_line(aes(y=SA_temp_duct1_F, color = "SA1"),size=0.5) + 
     geom_line(aes(y=SA_temp_duct2_F, color = "SA2"),size=0.5) + 
@@ -158,7 +140,7 @@ daily_defrost_plot <- function(site, timestart, timeend){
     geom_line(aes(y=fan_pwr_kW, color = "Supply Fan Power"),size=0.3) +
     geom_line(aes(y=auxheat_pwr_kW, color = "Auxiliary Power"),size=0.3) + 
     geom_point(aes(y=Defrost, color = "Defrost Mode On"),size=2) + 
-    geom_point(aes(y=Defrost_Cycle_Runtimes/2, color = "Defrost Cycle Length"),size=3,shape=8) +
+    geom_point(aes(y=defrost_cycle_runtimes/2, color = "Defrost Cycle Length"),size=3,shape=8) +
     scale_y_continuous(name = "Power (kW)",
                        limits = c(-0.5, 21),
                        sec.axis = sec_axis(~.*2, name ="Defrost Cycle Length (mins)")) +

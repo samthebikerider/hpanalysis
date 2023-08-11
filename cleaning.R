@@ -108,6 +108,8 @@ for (i in site_IDs){
 
   print(paste("site", i, "loaded, cleaning commencing", sep = " "))
   
+  
+  
   ## Cleaning steps ----
   
   # For Michaels sites, some auxheat have reversed power and one site does not have auxheat4_pwr_kW
@@ -131,6 +133,53 @@ for (i in site_IDs){
     if(!exists(var_name, where = df)){
       df[[var_name]] <- as.numeric(NA)
     }
+  }
+  
+  # For all E350 sites, all 1-minute temperature data needs to be interpolated to 1-second
+    # Right now, just running 1-minute data, so skipping this step
+  # if(i == "4228VB" | i == "5539NO"){
+  #   df <- df %>% 
+  #     group_by(Break=cut(Timestamp, breaks="1 min")) %>%
+  #     mutate(SA_temp_duct1_F=mean(SA_temp_duct1_F, na.rm=T), SA_RH_duct1=mean(SA_RH_duct1, na.rm=T),
+  #            SA_temp_duct2_F=mean(SA_temp_duct2_F, na.rm=T), SA_RH_duct2=mean(SA_RH_duct2, na.rm=T),
+  #            SA_temp_duct3_F=mean(SA_temp_duct3_F, na.rm=T), SA_RH_duct3=mean(SA_RH_duct3, na.rm=T),
+  #            SA_temp_duct4_F=mean(SA_temp_duct4_F, na.rm=T), SA_RH_duct4=mean(SA_RH_duct4, na.rm=T),
+  #            OA_temp_F=mean(OA_temp_F, na.rm=T), OA_RH=mean(OA_RH, na.rm=T),
+  #            RA_temp_F=mean(RA_temp_F, na.rm=T), RA_OH=mean(RA_OH, na.rm=T),
+  #            room1_temp_F=mean(room1_temp_F, na.rm=T), room1_RH=mean(room1_RH, na.rm=T),
+  #            room2_temp_F=mean(room2_temp_F, na.rm=T), room2_RH=mean(room2_RH, na.rm=T),
+  #            room3_temp_F=mean(room3_temp_F, na.rm=T), room3_RH=mean(room3_RH, na.rm=T),
+  #            room4_temp_F=mean(room4_temp_F, na.rm=T), room4_RH=mean(room4_RH, na.rm=T),
+  #            AHU_ambient_temp_F=mean(AHU_ambient_temp_F, na.rm=T), AHU_ambient_RH=mean(AHU_ambient_RH, na.rm=T)) %>% 
+  #     ungroup() %>%
+  #     select(-Break)
+  # }
+  
+  # Load Trane RV data for site 4228VB
+  if(i == "4228VB"){
+    # Load data
+    trane_rv <- list.files(path = paste0(wd, "trane_rv/"),pattern="*.csv", full.names=T) %>% 
+      map_df(~fread(.)) %>%
+      as.data.frame() %>%
+      mutate(datetime_UTC = as.POSIXct(strptime(DateTime, tz="US/Mountain", format="%m/%d/%Y %I:%M:%S %p") %>%
+                                      with_tz(tzone="UTC"))) %>%
+      select(datetime_UTC, DEFROST_ON_1) %>%
+      
+      ## Adding this step for the 1-minute data, so that we ensure the data lines up with 00 seconds
+      trane_rv$datetime_UTC = floor_date(trane_rv$datetime_UTC, unit="minute") 
+      trane_rv <- trane_rv %>% arrange(datetime_UTC, desc(DEFROST_ON_1)) %>% distinct(datetime_UTC, .keep_all = TRUE) 
+    
+    # Merge to dataframe
+    df <- df %>% merge(trane_rv, by="datetime_UTC", all.x=T, all.y=F) %>%
+      rename(reversing_valve_signal_V="DEFROST_ON_1") # %>%
+    
+    # Trane RV data is every four seconds for site 4228VB (and sometimes up to 16 seconds)
+      ## Don't need this with the 1-minute data though
+    # group_by(Break=cut(datetime_UTC, breaks="20 secs")) %>%
+    #   mutate(reversing_valve_signal_V=ceiling(mean(DEFROST_ON_1, na.rm=T))) %>% ungroup() %>%
+    #   select(-Break, -DEFROST_ON_1)
+    
+    rm(trane_rv)
   }
   
   

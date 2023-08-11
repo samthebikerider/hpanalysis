@@ -58,8 +58,8 @@ df_sec <- df_sec %>% drop_na(`Timestamp (UTC)`)
 # df_sec_full$timestamp <- as.POSIXct(df_sec_full$timestamp, format = "%Y-%m-%d %H:%M:%S")
 
 # Converting to minute data now just to get something working
-df_sec <- timeAverage(df_sec %>% rename(date = "Timestamp (UTC)"), avg.time = "min", data.thresh = 75, statistic = "mean") %>%
-  rename("Timestamp (UTC)" = "date")
+# df_sec <- timeAverage(df_sec %>% rename(date = "Timestamp (UTC)"), avg.time = "min", data.thresh = 75, statistic = "mean") %>%
+#   rename("Timestamp (UTC)" = "date")
 
 
 ## 1-minute data ##
@@ -77,7 +77,7 @@ df_min <- df_min %>% drop_na(Timestamp..UTC.) %>% rename("Timestamp (UTC)" = 'Ti
 
 df <- left_join(df_sec, df_min, by = "Timestamp (UTC)")
 
-# dups <- subset(df, duplicated(df$timestamp))
+
 
 setwd("~") # reset wd
 setwd(sites_wd) # set wd to sites folder for saving single site file
