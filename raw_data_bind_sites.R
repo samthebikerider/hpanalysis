@@ -76,7 +76,7 @@ for (i in e350_sites){
 
   # Note that some of the earlier E350 files use "Fan_Power [kW]" instead of "FanPower [kW]"
   to_keep <- c("Timestamp (UTC)", "HP_Power [kW]", "FanPower [kW]", "AHU_Power [kW]", "Aux_Heat_Power [kW]",
-               "ReversingValveSignal [V]") # list of cols used in agg
+               "ReversingValveSignal [V]", "Reversing_Valve_Signal [VDC]") # list of cols used in agg
   
   df <- subset(df, select = names(df) %in% to_keep) # keep only cols  used in agg
   

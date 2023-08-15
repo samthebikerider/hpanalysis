@@ -33,8 +33,8 @@ if(Sys.info()[7] == "rose775"){
   # wd_out <- 
 } else if(Sys.info()[7] == "keen930"){
   source("C:/Users/keen930/OneDrive - PNNL/Documents/CCHP/hpanalysis/functions_for_use.R") 
-  wd <- "Q:/"
-  wd_out <- "R:/"
+  wd <- "Q:/spring_performance_data/"
+  wd_out <- "Q:/spring_performance_data/"
 } else if(Sys.info()[7] == "zhan682"){
   ## Yiting to add for her file paths 
 }
@@ -42,7 +42,8 @@ if(Sys.info()[7] == "rose775"){
 
 ## Load data
 site_IDs <- unique(substr(list.files(path = paste0(wd, "clean/1_min/")), 1, 6))
-metadata <- read_csv(file = paste0(wd, "site-metadata.csv"))
+# metadata <- read_csv(file = paste0(wd, "site-metadata.csv"))
+metadata <- read_csv(file = "Q:/site-metadata.csv")
 
 
 for (i in site_IDs){
@@ -53,13 +54,14 @@ for (i in site_IDs){
   df <- list.files(path = paste0(wd, "clean/1_min/"), pattern = i, full.names = T) %>%
     map_df(~read_csv(.))
   
-
+## For spring performance data, take data only after April 01
+  df <- df %>% filter(datetime_UTC > strptime("2023-04-01", format = "%F", tz=metadata$Timezone[metadata$Site_ID==i]))
   
 ## Calculate columns 
 
 # Add column that determines the number of aux legs that are active at every timestamp
   # Use the auxheat legs for Michaels; E350 will need to infer based on power level  
-if(exists(auxheat1_pwr_kW, where=df)){
+if(exists("auxheat1_pwr_kW", where=df)){
   df <- df %>% mutate(
   number_aux_legs = ifelse(sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==4, 4,
                            ifelse(sum(auxheat1_pwr_kW > 0.1, auxheat2_pwr_kW > 0.1, auxheat3_pwr_kW > 0.1, auxheat4_pwr_kW > 0.1)==3, 3,
@@ -75,6 +77,8 @@ if(exists(auxheat1_pwr_kW, where=df)){
   }
 
 
+
+  
 ## Operating mode ##
   # Objective: Create a column with operating mode: 
     # Heating-HP Only
@@ -91,38 +95,39 @@ df <- df %>% mutate(operating_mode =
   # 2. Identify defrost mode                      
       # For Michaels sites, 0V on RV indicates heating mode and 27V indicates cooling/defrost.
       # NOTE: It looks like site 7083LM, greater than 20V means heating mode, and between 0.4 and 0.6V is system off, and 0.8 to 1.1V might be defrost
-    ifelse(site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB") & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V > 25 & ODU_pwr_kW > 0.1, "Defrost",
-    ifelse(site_ID == "7083LM" & reversing_valve_signal_V > 0.8 & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V < 1.1 & ODU_pwr_kW > 0.1, "Defrost", 
+    ifelse(site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB") & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V > 25 & ODU_pwr_kW > 0.2, "Defrost",
+    ifelse(site_ID == "7083LM" & reversing_valve_signal_V > 0.8 & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V < 1.1 & ODU_pwr_kW > 0.2, "Defrost", 
       # For site 4228VB, Trane provided RV data but there are some gaps which require secondary indicators
     ifelse(site_ID == "4228VB" & is.na(reversing_valve_signal_V) &
-             auxheat_pwr_kW > 4.0 & ODU_pwr_kW > 0.1 & ODU_pwr_kW < 1.25 & fan_pwr_kW > 0.35, "Defrost",
-        ifelse(site_ID == "4228VB" & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V==1 & ODU_pwr_kW > 0.1, "Defrost",
+             auxheat_pwr_kW > 4.0 & ODU_pwr_kW > 0.2 & ODU_pwr_kW < 1.25 & fan_pwr_kW > 0.35, "Defrost",
+        ifelse(site_ID == "4228VB" & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V==1 & ODU_pwr_kW > 0.2, "Defrost",
       # For site 5539NO, RV between 0.6 V and 3.0 V indicates defrost mode
-    ifelse(site_ID == "5539NO" & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V > 0.6 & reversing_valve_signal_V < 3 & ODU_pwr_kW > 0.1, "Defrost",
+    ifelse(site_ID == "5539NO" & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V > 0.6 & reversing_valve_signal_V < 3 & ODU_pwr_kW > 0.2, "Defrost",
       # For site 2458CE, secondary indicators are used
     ifelse(site_ID=="2458CE" & ODU_pwr_kW > 0.1 & ODU_pwr_kW < 1.75 & fan_pwr_kW > 0.4 & auxheat_pwr_kW > 4, "Defrost",
       # For site 5291QJ, secondary indicators are used
     ifelse(site_ID=="5291QJ" & ODU_pwr_kW > 0.5 & fan_pwr_kW > 0.02 & fan_pwr_kW < 0.06 , "Defrost",
   
   # 3. If not defrost mode, use power data to determine the mode         
-    ifelse(ODU_pwr_kW > 0.1 & auxheat_pwr_kW < 0.1, "Heating-HP Only",
-         ifelse(ODU_pwr_kW < 0.1 & auxheat_pwr_kW > 0.1, "Heating-Aux Only",
-                ifelse(ODU_pwr_kW > 0.1 & auxheat_pwr_kW > 0.1, "Heating-Aux/HP",
+    ifelse(ODU_pwr_kW > 0.2 & auxheat_pwr_kW < 0.1, "Heating-HP Only",
+         ifelse(ODU_pwr_kW < 0.2 & auxheat_pwr_kW > 0.1, "Heating-Aux Only",
+                ifelse(ODU_pwr_kW > 0.2 & auxheat_pwr_kW > 0.1, "Heating-Aux/HP",
                        "System Off")))))))))))) %>%
  
   # 4. Correct for cooling mode to differentiate from defrost mode
-    # Indicators: Operating Mode is Defrost, Aux Power is less than 0.1 kW and OA Temp is greater than 50F.
-    # We will need to check this and adjust.
-    mutate(operating_mode=ifelse(
-      # Michaels sites
-      site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB", "7083LM") & operating_mode=="Defrost" & auxheat_pwr_kW < 0.1 & OA_temp_F > 50,
-             "Cooling", operating_mode))
+    # Indicators: Operating Mode is Defrost, Aux Power is less than 0.1 kW and OA Temp is greater than 30F.
+    mutate(operating_mode=
+      # Site 4228VB Trane RV data does not identify cooling as defrost on, so OA temp is the only real indicator (not great)
+      ifelse(site_ID == "4228VB" & ODU_pwr_kW > 0.2 & auxheat_pwr_kW < 0.1 & OA_temp_F > 30, "Cooling",
+      # For all other sites, cooling mode should be previously identified as defrost mode
+      ifelse(operating_mode=="Defrost" & auxheat_pwr_kW < 0.1 & OA_temp_F > 30, "Cooling", 
+             operating_mode)))
 
 
 # Heat pump status
   # Used to calculate the length of heat pump cycles and to determine if the 
   # HP ODU is on or off at every timestamp.
-df <- df %>% mutate(HP_status = ifelse(is.na(fan_pwr_kW), NA, ifelse(ODU_pwr_kW > 0.1, "On", "Off")))
+df <- df %>% mutate(HP_status = ifelse(is.na(fan_pwr_kW), NA, ifelse(ODU_pwr_kW > 0.2, "On", "Off")))
 
 
 
@@ -148,8 +153,8 @@ df <- df %>% mutate(
 
 ## Make a column for HP and defrost cycle times. The last timestamp of each cycle
   # will store the duration of that cycle in minutes.
-df$HP_cycle_runtimes <- run_cycle_calc(df$site_ID, df$datetime_UTC, df$HP_status, "On")
-df$defrost_cycle_runtimes <- run_cycle_calc(df$site_ID, df$datetime_UTC, df$operating_mode, "Defrost")
+df$HP_cycle_runtimes <- run_cycle_calc(df$datetime_UTC, df$HP_status, "On")
+df$defrost_cycle_runtimes <- run_cycle_calc(df$datetime_UTC, df$operating_mode, "Defrost")
 
 
 ## Corrections needed for defrost modes with secondary indicators
@@ -254,7 +259,11 @@ print(paste("completed calculations for site", i, "now creating diagnostic graph
 
 
 # Vector storing every date in the dataframe
-dates <- unique(df$date_local)
+dates <- as.character(unique(df$date_local))
+
+
+# Convert NAs to numeric (instead of logic) so they do not give errors
+df <- df %>% mutate_at(c("room4_temp_F", "SA_temp_duct3_F", "SA_temp_duct4_F", "defrost_cycle_runtimes"), as.numeric)
 
 # Room temperature time series
   # Loop through dates (skip the first one to not have a partial day)
@@ -267,7 +276,7 @@ for(d in dates[-1]){
          width=12, height=4, units='in')
 }
 
-
+print("completed room temperature graphs")
 
 # Supply temperature time series
   # Loop through dates (skip the first one to not have a partial day)
@@ -280,19 +289,21 @@ for(d in dates[-1]){
          width=12, height=4, units='in')
 }
 
+print("completed supply temperature graphs")
 
 
 # Defrost cycle time series
   # Loop through dates (skip the first one to not have a partial day)
-for(d in dates[-1]){
-  # d1 = d + one day
-  d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
-  ggsave(paste0(i, '_Daily-Defrost_',d,'.png'),
-         plot = daily_defrost_plot(i, d, d1),
-         path = paste0(wd_out,'daily_ops/',i, '/daily_defrost/'),
-         width=12, height=4, units='in')
-}
-
+# for(d in dates[-1]){
+#   # d1 = d + one day
+#   d1 = substr(as.character(strptime(d, "%F", tz=metadata$Timezone[metadata$Site_ID==i]) + 60*60*24), 1, 10)
+#   ggsave(paste0(i, '_Daily-Defrost_',d,'.png'),
+#          plot = daily_defrost_plot(i, d, d1),
+#          path = paste0(wd_out,'daily_ops/',i, '/daily_defrost/'),
+#          width=12, height=4, units='in')
+# }
+# 
+# print("completed defrost cycle graphs")
 
 
 # Daily operation power and temperature time series
@@ -306,6 +317,7 @@ for(d in dates[-1]){
          width=12, height=4, units='in')
 }
 
+print("completed daily operation graphs")
 
 
 # COP, heat and cooling output, and power time series
@@ -319,23 +331,25 @@ for(d in dates[-1]){
          width=12, height=4, units='in')
 }
 
+print("completed COP graphs")
 
 
 # Operating mode daily summary
   # Winter 2023 Performance
 # ggsave('operating_mode_winter_2023_performance.png',
 #        plot = operating_mode_season(i, "12/15/2022 00:00", "3/30/2023 23:59"),
-#        path = paste0(wd_out,'daily ops/',i, '/'),
+#        path = paste0(wd_out,'daily ops/',i),
 #        width=12, height=4, units='in')
-ggsave('operating_mode_spring_2023_performance.png',
+ggsave(paste0(i, '_operating_mode_spring.png'),
        plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
-       path = paste0(wd_out,'daily ops/',i, '/'),
+       path = paste0(wd_out,'daily_ops/', i),
        width=12, height=4, units='in')
 # ggsave('operating_mode_summer_2023_performance.png',
 #        plot = operating_mode_season(i, "6/15/2023 00:00", "9/30/2023 23:59"),
-#        path = paste0(wd_out,'daily ops/',i, '/'),
+#        path = paste0(wd_out,'daily ops/',i),
 #        width=12, height=4, units='in')
 
+print("completed opearting mode daily summary graph")
 
 
 ## Remove data before data stabilizes for each site.

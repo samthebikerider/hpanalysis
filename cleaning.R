@@ -93,6 +93,7 @@ for (i in site_IDs){
             ODU_pwr_kW = "HP_Power [kW]", fan_pwr_kW = "FanPower [kW]", 
             AHU_pwr_kW = "AHU_Power [kW]", auxheat_pwr_kW = "Aux_Heat_Power [kW]",
             reversing_valve_signal_V = "ReversingValveSignal [V]",
+            reversing_valve_signal_V = "Reversing_Valve_Signal [VDC]",
             OA_temp_F = "OA_Temp..Ã.Â.F.", OA_RH = "OA_RH....", 
             SA_temp_duct1_F = "SA_Duct1_Temp..Ã.Â.F.", SA_RH_duct1 = "SA_Duct1_RH....", 
             SA_temp_duct2_F = "SA_Duct2_Temp..Ã.Â.F.", SA_RH_duct2 = "SA_Duct2_RH....",
@@ -163,11 +164,21 @@ for (i in site_IDs){
       as.data.frame() %>%
       mutate(datetime_UTC = as.POSIXct(strptime(DateTime, tz="US/Mountain", format="%m/%d/%Y %I:%M:%S %p") %>%
                                       with_tz(tzone="UTC"))) %>%
-      select(datetime_UTC, DEFROST_ON_1) %>%
+      select(datetime_UTC, DEFROST_ON_1)
+    
+    # Print summary of this data for record #
+    write.csv(
+      trane_rv %>% group_by(date(datetime_UTC)) %>%
+        summarize(DEFROST_ON = round(sum(DEFROST_ON_1==1, na.rm=T)*100/n(), 1),
+                  DEFROST_OFF = round(sum(DEFROST_ON_1==0, na.rm=T)*100/n(), 1),
+                  DEFROST_NA = round(sum(is.na(DEFROST_ON_1))*100/n(), 1),
+                  Data_Points = n()),
+      file=paste0(wd, "spring_performance_data/daily_ops/", i, "/Trane_RV_Data_Summary.csv"),
+      row.names=F)
       
-      ## Adding this step for the 1-minute data, so that we ensure the data lines up with 00 seconds
-      trane_rv$datetime_UTC = floor_date(trane_rv$datetime_UTC, unit="minute") 
-      trane_rv <- trane_rv %>% arrange(datetime_UTC, desc(DEFROST_ON_1)) %>% distinct(datetime_UTC, .keep_all = TRUE) 
+    ## Adding this step for the 1-minute data, so that we ensure the data lines up with 00 seconds
+    trane_rv$datetime_UTC = floor_date(trane_rv$datetime_UTC, unit="minute") 
+    trane_rv <- trane_rv %>% arrange(datetime_UTC, desc(DEFROST_ON_1)) %>% distinct(datetime_UTC, .keep_all = TRUE) 
     
     # Merge to dataframe
     df <- df %>% merge(trane_rv, by="datetime_UTC", all.x=T, all.y=F) %>%
