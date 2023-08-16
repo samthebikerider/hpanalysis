@@ -193,11 +193,11 @@ daily_operation_plot <- function(site, timestart, timeend){
       geom_line(aes(y=auxheat_pwr_kW, color = "Auxiliary Power"),size=0.3) + 
       # Operation mode
       geom_point(aes(y=defrost_cycle_runtimes, shape = "Defrost Cycle Length"),size=3,color="purple") +
-      geom_line(aes(y=ifelse(operating_mode == "Cooling", -2, NA), linetype="Cooling"), color = "blue", size = 5) +
-      geom_line(aes(y=ifelse(operating_mode == "Defrost", -2, NA), linetype="Defrost"), color = "purple", size = 5) +
-      geom_line(aes(y=ifelse(operating_mode %in% c("Heating-HP Only", "Heating-Aux Only", "Heating-Aux/HP") , -2, NA), 
+      geom_line(aes(y=ifelse(operating_mode == "Cooling", -2, as.numeric(NA)), linetype="Cooling"), color = "blue", size = 5) +
+      geom_line(aes(y=ifelse(operating_mode == "Defrost", -2, as.numeric(NA)), linetype="Defrost"), color = "purple", size = 5) +
+      geom_line(aes(y=ifelse(operating_mode %in% c("Heating-HP Only", "Heating-Aux Only", "Heating-Aux/HP") , -2, as.numeric(NA)), 
                     linetype="Heating"), color = "red", size = 5) +
-      geom_line(aes(y=ifelse(operating_mode == "System Off", -2, NA), linetype="System Off"), color = "gray", size = 5) +
+      geom_line(aes(y=ifelse(operating_mode == "System Off", -2, as.numeric(NA)), linetype="System Off"), color = "gray", size = 5) +
       scale_y_continuous(name = "Power (kW)",
                          limits = c(-4, 25),
                          sec.axis = sec_axis(~.*5, name ="Temperature (F)")) +

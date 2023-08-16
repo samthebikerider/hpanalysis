@@ -97,12 +97,15 @@ df <- df %>% mutate(operating_mode =
       # NOTE: It looks like site 7083LM, greater than 20V means heating mode, and between 0.4 and 0.6V is system off, and 0.8 to 1.1V might be defrost
     ifelse(site_ID %in% c("2563EH", "2896BR", "6950NE", "8220XE", "9944LD", "6112OH", "8726VB") & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V > 25 & ODU_pwr_kW > 0.2, "Defrost",
     ifelse(site_ID == "7083LM" & reversing_valve_signal_V > 0.8 & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V < 1.1 & ODU_pwr_kW > 0.2, "Defrost", 
+      
       # For site 4228VB, Trane provided RV data but there are some gaps which require secondary indicators
     ifelse(site_ID == "4228VB" & is.na(reversing_valve_signal_V) &
              auxheat_pwr_kW > 4.0 & ODU_pwr_kW > 0.2 & ODU_pwr_kW < 1.25 & fan_pwr_kW > 0.35, "Defrost",
         ifelse(site_ID == "4228VB" & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V==1 & ODU_pwr_kW > 0.2, "Defrost",
+      
       # For site 5539NO, RV between 0.6 V and 3.0 V indicates defrost mode
     ifelse(site_ID == "5539NO" & !is.na(reversing_valve_signal_V) & reversing_valve_signal_V > 0.6 & reversing_valve_signal_V < 3 & ODU_pwr_kW > 0.2, "Defrost",
+  
       # For site 2458CE, secondary indicators are used
     ifelse(site_ID=="2458CE" & ODU_pwr_kW > 0.1 & ODU_pwr_kW < 1.75 & fan_pwr_kW > 0.4 & auxheat_pwr_kW > 4, "Defrost",
       # For site 5291QJ, secondary indicators are used
@@ -117,8 +120,10 @@ df <- df %>% mutate(operating_mode =
   # 4. Correct for cooling mode to differentiate from defrost mode
     # Indicators: Operating Mode is Defrost, Aux Power is less than 0.1 kW and OA Temp is greater than 30F.
     mutate(operating_mode=
-      # Site 4228VB Trane RV data does not identify cooling as defrost on, so OA temp is the only real indicator (not great)
-      ifelse(site_ID == "4228VB" & ODU_pwr_kW > 0.2 & auxheat_pwr_kW < 0.1 & OA_temp_F > 30, "Cooling",
+      
+      # Site 4228VB Trane RV data does not identify cooling as defrost on, so SA temp is the only real indicator
+      ifelse(site_ID == "4228VB" & ODU_pwr_kW > 0.2 & auxheat_pwr_kW < 0.1 & SA_temp_F < 60 & OA_temp_F > 35, "Cooling",
+      
       # For all other sites, cooling mode should be previously identified as defrost mode
       ifelse(operating_mode=="Defrost" & auxheat_pwr_kW < 0.1 & OA_temp_F > 30, "Cooling", 
              operating_mode)))
