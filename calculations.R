@@ -36,7 +36,7 @@ if(Sys.info()[7] == "rose775"){
   wd <- "Q:/"
   wd_out <- "R:/"
 } else if(Sys.info()[7] == "zhan682"){
-  ## Yiting to add for her file paths 
+  source("C:/Users/zhan682/OneDrive - PNNL/Documents/GitHub/hpanalysis/functions_for_use.R")
 }
 
 
