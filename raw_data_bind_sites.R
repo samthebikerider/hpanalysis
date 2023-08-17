@@ -74,9 +74,20 @@ for (i in e350_sites){
   
   print(paste0('site ', i, ' loaded'))
 
-  # Note that some of the earlier E350 files use "Fan_Power [kW]" instead of "FanPower [kW]"
+  # Note that some of the earlier E350 files use "Fan_Power [kW]" instead of "FanPower [kW]" and
+  # "ReversingValveSignal [V]" instead of "Reversing_Valve_Signal [VDC]".
+      # They were using different conventions between the two sites and I asked them to 
+      # continue with the format for 4228VB because that's what I set up the script for,
+      # which is FanPower [kW] and Reversing_Valve_Signal [VDC]
+  if(exists("ReversingValveSignal [V]", where=df)){
+    df <- df %>% rename('Reversing_Valve_Signal [VDC]' = "ReversingValveSignal [V]")
+  }
+  if(exists("Fan_Power [kW]", where=df)){
+    df <- df %>% rename('FanPower [kW]' = "Fan_Power [kW]")
+  }
+  
   to_keep <- c("Timestamp (UTC)", "HP_Power [kW]", "FanPower [kW]", "AHU_Power [kW]", "Aux_Heat_Power [kW]",
-               "ReversingValveSignal [V]", "Reversing_Valve_Signal [VDC]") # list of cols used in agg
+               "Reversing_Valve_Signal [VDC]") # list of cols used in agg
   
   df <- subset(df, select = names(df) %in% to_keep) # keep only cols  used in agg
   
@@ -151,11 +162,11 @@ for (i in michaels_site_IDs){
   
   print(paste0('site ', i, ' subsetted'))
 
-  # Converting to minute data now just to get something working
+  # Converting to minute data temporarily just to get something working
   # df <- timeAverage(df %>% rename(date = "index"), avg.time = "min", data.thresh = 75, statistic = "mean") %>%
   #   rename(index = "date")
   
-  print(paste0('site ', i, ' time averaged'))
+  # print(paste0('site ', i, ' time averaged'))
 
   setwd("~") # reset wd
   setwd(sites_wd) # set wd to sites folder for saving single site file

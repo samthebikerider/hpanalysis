@@ -92,7 +92,6 @@ for (i in site_IDs){
             # Energy350 column names
             ODU_pwr_kW = "HP_Power [kW]", fan_pwr_kW = "FanPower [kW]", 
             AHU_pwr_kW = "AHU_Power [kW]", auxheat_pwr_kW = "Aux_Heat_Power [kW]",
-            reversing_valve_signal_V = "ReversingValveSignal [V]",
             reversing_valve_signal_V = "Reversing_Valve_Signal [VDC]",
             OA_temp_F = "OA_Temp..Ã.Â.F.", OA_RH = "OA_RH....", 
             SA_temp_duct1_F = "SA_Duct1_Temp..Ã.Â.F.", SA_RH_duct1 = "SA_Duct1_RH....", 
