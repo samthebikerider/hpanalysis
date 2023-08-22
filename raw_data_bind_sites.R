@@ -2,7 +2,7 @@
 # Author: Samuel Rosenberg
 # Company: Pacific Northwest National Laboratory
 # Created on: 2023-07-19
-# Description: Reads raw CSV files from M&V contractors
+# Description: Reads weekly raw CSV files from M&V contractors
   # and binds into one file for each site.
 #####################################################
 # Todo:
