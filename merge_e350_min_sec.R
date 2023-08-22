@@ -44,7 +44,7 @@ e350_sites <- unique(substr(list.files(pattern="*.csv"), 6, 11))
 # combine sites
 for (i in e350_sites){
   
-## 1-second data ##
+######### 1-second data #########
 setwd(e350_sec_sites_wd)
 df_sec <- read_csv(paste("site_", i, "_second.csv", sep = ""))
 
@@ -62,19 +62,22 @@ df_sec <- df_sec %>% drop_na(`Timestamp (UTC)`)
 #   rename("Timestamp (UTC)" = "date")
 
 
-## 1-minute data ##
+######### 1-minute data #########
 setwd(e350_min_sites_wd)
 df_min <- read.csv(paste("site_", i, "_minute.csv", sep = ""))
 
 df_min$Timestamp..UTC. <- parse_date_time(df_min$Timestamp..UTC., orders = c("ymd_HMS", "mdy_HMS"))
 df_min$Timestamp..UTC. <- as.POSIXct(df_min$Timestamp..UTC.)
 
-df_min <- df_min %>% drop_na(Timestamp..UTC.) %>% rename("Timestamp (UTC)" = 'Timestamp..UTC.')
+df_min <- df_min %>% drop_na(Timestamp..UTC.) %>% rename('Timestamp (UTC)' = "Timestamp..UTC.")
 
   # I already have a step to fill in the missing timestamps in cleaning.R, we don't need it here
 # df_min_full <- fill_missing_timestamps(df_min, "Timestamp..UTC.", format = "%Y-%m-%d %H:%M:%S", interval = "sec")
 # df_min_full$timestamp <- as.POSIXct(df_min_full$timestamp, format = "%Y-%m-%d %H:%M:%S")
 
+
+
+######### Join 1-second and 1-minute data #########
 df <- left_join(df_sec, df_min, by = "Timestamp (UTC)")
 
 
