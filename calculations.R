@@ -36,7 +36,7 @@ if(Sys.info()[7] == "rose775"){
   wd <- "Q:/spring_performance_data/"
   wd_out <- "Q:/spring_performance_data/"
 } else if(Sys.info()[7] == "zhan682"){
-  ## Yiting to add for her file paths 
+  source("C:/Users/zhan682/OneDrive - PNNL/Documents/GitHub/hpanalysis/functions_for_use.R")
 }
 
 
