@@ -37,7 +37,9 @@ if(Sys.info()[7] == "rose775"){
   wd_out <- "Q:/spring_performance_data/"
 } else if(Sys.info()[7] == "zhan682"){
   source("C:/Users/zhan682/OneDrive - PNNL/Documents/GitHub/hpanalysis/functions_for_use.R")
-}
+  wd <- "\\\\rc-smb1\\qprojects\\cchpc\\spring_performance_data"
+  wd_out <- "\\\\rc-smb1\\qprojects\\cchpc\\spring_performance_data"
+  }
 
 
 ## Load data
