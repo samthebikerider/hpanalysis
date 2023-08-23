@@ -58,6 +58,9 @@ df_min <- df_min %>% drop_na(Timestamp..UTC.)
 df_min_full <- fill_missing_timestamps(df_min, "Timestamp..UTC.", format = "%Y-%m-%d %H:%M:%S", interval = "sec")
 df_min_full$timestamp <- as.POSIXct(df_min_full$timestamp, format = "%Y-%m-%d %H:%M:%S")
 
+rm(df_sec)
+rm(df_min)
+
 df <- left_join(df_sec_full, df_min_full, by = "timestamp")
 
 dups <- subset(df, duplicated(df$timestamp))
