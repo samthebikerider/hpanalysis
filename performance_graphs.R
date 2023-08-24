@@ -155,7 +155,7 @@ df <- df %>% mutate_at(c("auxheat1_pwr_kW", "room4_temp_F", "room4_RH",
 for (i in site_IDs) {
   ggsave(paste0(i, '_operating_mode_spring.png'),
         plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
-        path = paste0(wd_out,'daily_ops/', i),
+        path = paste0(wd_out,'/daily_ops/', i),
         width=12, height=4, units='in')
 }
 print("completed operating mode daily summary graphs")
