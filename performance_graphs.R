@@ -46,7 +46,6 @@ if(Sys.info()[7] == "rose775"){
   }
 
 ## Load data
-site_IDs <- unique(substr(list.files(path = paste0(wd, "/calculated_data")), 1, 6))
   # Don't see "7083LM" in "calculated_data"
   ## KK: I think for this script, it would be better to have site_IDs be an input
     # so that we don't necessarily need to run for all sites if we just want to 
@@ -55,7 +54,24 @@ site_IDs <- unique(substr(list.files(path = paste0(wd, "/calculated_data")), 1, 
     # to sign some agreement for this site. 2896BR is also dropping out of the study
     # and has very little spring data, so we will not want to include that site 
     # fot the spring graphs.
-# site_IDs <- c('2563EH') # for test
+
+  ## YZ: Here we can have site_IDs be an input. Uncomment to use.
+site_IDs <- unique(substr(list.files(path = paste0(wd, "/calculated_data")), 1, 6))
+
+# site_IDs <- c(
+#   "2563EH",
+#   # "2896BR", # very little data
+#   "6112OH",
+#   # "6950NE",
+#   # "7083LM", # no data
+#   # "8220XE",
+#   # "8726VB",
+#   # "9944LD",
+#   # "4228VB",
+#   # "5539NO",
+#   # "5291QJ",
+#   # "2458CE",
+#   "stop")
 
 metadata <- read_csv(file = '\\\\rc-smb1\\qprojects\\cchpc\\site-metadata.csv')
 # metadata <- read_csv(file = "Q:/site-metadata.csv")
@@ -74,27 +90,31 @@ metadata <- read_csv(file = '\\\\rc-smb1\\qprojects\\cchpc\\site-metadata.csv')
 lookup_table <- data.frame(
   site_ID = c("4228VB", "9944LD", "8220XE", "2563EH", "5291QJ", 
               "2896BR", "6112OH", "6950NE", "5539NO", "2458CE", "8726VB"),
+  start_date = c("2023-04-01", "2023-04-01", "2023-04-01", "2023-04-01", "2023-04-01", 
+                 "2023-04-01", "2023-04-01", "2023-04-01", "2023-04-01", "2023-04-01", "2023-04-01"),
   temp_min = c(25, 35, 15, 20, 10, 20, 15, 15, 25, 10, 15), # choose lowest temp in Feb
   temp_max = c(100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100) # set to 100
 )
 
 # Create an empty data frame to store data for all site IDs
-  # Do this because the original one overwriting df in each iteration,
-  # resulting in only the last site_ID's data being stored in df.
 df <- data.frame()
 for (i in site_IDs){
+  if (i == "stop"){
+    break
+  }
   print(paste("beginning site", i, sep = " "))
   
   ## Load data from 'calculated_data' folder ----
   temp_df <- list.files(path = paste0(wd, "/calculated_data"), pattern = i, full.names = T) %>%
     map_df(~read_csv(.))
+  site_info <- lookup_table[lookup_table$site_ID == i, ]
   
   ## For spring performance data, take data only after April 01
-    ## KK: can we make this an input before the loop so it will be easy to
+  ## KK: can we make this an input before the loop so it will be easy to
     # choose which sites and what timeframe at the beginning?
-  temp_df <- temp_df %>% filter(datetime_UTC > strptime("2023-04-01", format = "%F", tz=metadata$Timezone[metadata$Site_ID==i]))
+  ## YZ: Revised. I added a start_date list in lookup_table, should be changed manually later.
+  temp_df <- temp_df %>% filter(datetime_UTC > strptime(site_info$start_date, format = "%F", tz=metadata$Timezone[metadata$Site_ID==i]))
   
-  site_info <- lookup_table[lookup_table$site_ID == i, ]
   if (nrow(site_info) == 1) {
     temp_min <- site_info$temp_min
     temp_max <- site_info$temp_max
@@ -108,7 +128,6 @@ for (i in site_IDs){
   # Append the processed data to the combined data frame
   df <- bind_rows(df, temp_df)
 }
-
 
 ## Set minimum temperature for temperature bins for when sample size is too small
 
@@ -129,10 +148,16 @@ df <- df %>% mutate_at(c("auxheat1_pwr_kW", "room4_temp_F", "room4_RH",
 #        plot = operating_mode_season(i, "12/15/2022 00:00", "3/30/2023 23:59"),
 #        path = paste0(wd_out,'daily ops/',i),
 #        width=12, height=4, units='in')
-ggsave(paste0(i, '_operating_mode_spring.png'),
-       plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
-       path = paste0(wd_out,'daily_ops/', i),
-       width=12, height=4, units='in')
+
+  ## YZ: I reformatted this
+for (i in site_IDs) {
+  ggsave(paste0(i, '_operating_mode_spring.png'),
+        plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
+        path = paste0(wd_out,'daily_ops/', i),
+        width=12, height=4, units='in')
+}
+print("completed operating mode daily summary graphs")
+
 # ggsave('operating_mode_summer_2023_performance.png',
 #        plot = operating_mode_season(i, "6/15/2023 00:00", "9/30/2023 23:59"),
 #        path = paste0(wd_out,'daily ops/',i),
@@ -196,12 +221,16 @@ print("completed supply temperature graphs")
 
 
 # 6a. Heating and Cooling capacity (i.e., heating load, cooling load) (Btu/h) by OAT bin
-  # KK: it looks like there are some positive cooling output and negative heat output,
-  # which shouldn't be possible, but I made some updates to the calculations.R 
-  # script which hopefully will fix that.
-  # KK: Also, can we change the colors of the categories in this graph so that
-  # heating is a warmer/red color and cooling is a cooler/blue color, and then
-  # defrost is maybe green or something else?
+  ## KK: it looks like there are some positive cooling output and negative heat output,
+    # which shouldn't be possible, but I made some updates to the calculations.R 
+    # script which hopefully will fix that.
+  ## KK: Also, can we change the colors of the categories in this graph so that
+    # heating is a warmer/red color and cooling is a cooler/blue color, and then
+    # defrost is maybe green or something else?
+  
+  ## YZ: I have changed the colors. Since this file read data in calculated_data, 
+    # should we use calculations.R to update them?
+
 for (i in site_IDs) {
   ggsave(paste0(i, '_heat_cool_capacity_vs_OAT_Bin.png'),
        plot = heat_cool_capacity_OAT_Bin(i),
@@ -212,35 +241,41 @@ print("completed supply temperature graphs")
 
 
 # 6b. Table to show the "maximum" heating and cooling capacity in each OAT bin
-    # KK: Note that cooling output will be negative values, so we will need the 5th percentile
-    # instead of the 95th percentile.
+    ## KK: Note that cooling output will be negative values, so we will need the 5th percentile
+      # instead of the 95th percentile.
+    ## YZ: Revised.
 results_list <- list()
 for (i in site_IDs) {
   result <- print_heat_cool_capacity(i)
   results_list[[i]] <- result
 }
 combined_results <- bind_rows(results_list, .id = "site_ID")
-write.csv(combined_results, paste0(wd_out, '/Graphs/Site Comparison/Max Heat and Cool Capacity.csv'), row.names = FALSE)
+write.csv(combined_results, paste0(wd_out, '/graphs/site_comparison/Max Heat and Cool Capacity.csv'), row.names = FALSE)
 
 print("completed table of the maximum heating and cooling capacity")
 
 
 # 7a. COP vs outdoor air temperature for each site
-  # KK: note we already have a column for total power, now called HP_system_pwr_kW
-  # I know it's confusing because HP doesn't include aux normally, but that's what
-  # they decided to call the column--it includes HP, aux, and fan power.
-  # KK: also note that cooling output is negative, which is what we want, but
-  # COP should always be positive, so for this graph I think we should subtract
-  # the cooling output from the heating output.
+  ## KK: note we already have a column for total power, now called HP_system_pwr_kW
+    # I know it's confusing because HP doesn't include aux normally, but that's what
+    # they decided to call the column--it includes HP, aux, and fan power.
+  ## YZ: Thank you! Revised.
+
+  ## KK: also note that cooling output is negative, which is what we want, but
+    # COP should always be positive, so for this graph I think we should subtract
+    # the cooling output from the heating output.
+  ## YZ: I Revised as below in functions_for_use.R:
+    # COP_Total = (sum(heat_output_btu_h, na.rm = TRUE) - sum(cooling_output_btu_h, na.rm = TRUE)) / sum(HP_system_pwr_kW, na.rm = TRUE) / 3412)
+
 ggsave('COP_vs_OAT_Bin.png',
        plot = heat_cool_COP_all_sites(unique(metadata$Manufacturer)),
-       path = paste0(wd,'/Graphs/Site Comparison/'),
+       path = paste0(wd,'/graphs/site_comparison/'),
        width=12, height=4, units='in')
 # Print graph to folder with one for each manufacturer
 for(manu in unique(metadata$Manufacturer)){
   ggsave(paste0('COP_vs_OAT_Bin_', manu, '.png'),
          plot = heat_cool_COP_all_sites(manu),
-         path = paste0(wd,'/Graphs/Site Comparison/'),
+         path = paste0(wd,'/graphs/site_comparison/'),
          width=12, height=4, units='in')
 }
 

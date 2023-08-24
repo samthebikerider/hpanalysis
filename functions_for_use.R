@@ -484,7 +484,7 @@ heat_cool_capacity_OAT_Bin <- function(site){
     geom_bar(stat="identity", position="stack") +
     scale_fill_manual(limits = c("heating_capacity", "aux_capacity", "cooling_capacity"),
                       labels=c("Heating", "Auxiliary", "Cooling"),
-                      values=c("#00BFC4", "#F8766D", "#E69F00")) +
+                      values=c("#F8766D", "#E69F00", "#00BFC4")) +
     labs(title=paste0("Delivered heating and cooling capacity per OAT bin for site ",site),
          x="Outdoor Air Temperature Bin (F)",
          y="Delivered Heating and Cooling Capacity (Btu/hr)",
@@ -510,7 +510,7 @@ print_heat_cool_capacity <- function(site){
     summarize(max_heat_capacity = round(quantile(heat_output_btu_h, c(0.95), na.rm = T)/1000),
               max_HP_capacity = round(quantile(heat_output_btu_h[operating_mode=="Heating-HP Only"], c(0.95), na.rm = T)/1000),
               max_Aux_capacity = round(quantile(heat_output_btu_h[operating_mode=="Heating-Aux Only"], c(0.95), na.rm = T)/1000),
-              max_cool_capacity = round(quantile(cooling_output_btu_h, c(0.95), na.rm = T)/1000) # [operating_mode=="Cooling"]?
+              max_cool_capacity = round(quantile(cooling_output_btu_h, c(0.05), na.rm = T)/1000) # [operating_mode=="Cooling"]?
               )
   return(temp2)
   # write.csv(temp2, paste0(wd_out, '/Graphs/Site Comparison/Max Heat and Cool Capacity.csv'), row.names = F)
@@ -522,12 +522,11 @@ print_heat_cool_capacity <- function(site){
 # ++++7a. COP vs outdoor air temperature for each site
 heat_cool_COP_all_sites <- function(manufacturers){
   merged_df <- df %>%
-    mutate(temp_int = cut(OA_temp_F, breaks = c(0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100)),
-           total_power = HP_system_pwr_kW + auxheat_pwr_kW + fan_pwr_kW) %>%
+    mutate(temp_int = cut(OA_temp_F, breaks = c(0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100))) %>%
     filter(OA_temp_F < temp_max & OA_temp_F > temp_min) %>%
     group_by(site_ID, temp_int) %>%
     summarize(OA_temp_F = median(OA_temp_F, na.rm = TRUE),
-              COP_Total = (sum(cooling_output_btu_h, na.rm = TRUE) + sum(heat_output_btu_h, na.rm = TRUE)) / sum(total_power, na.rm = TRUE) / 3412)
+              COP_Total = (sum(heat_output_btu_h, na.rm = TRUE) - sum(cooling_output_btu_h, na.rm = TRUE)) / sum(HP_system_pwr_kW, na.rm = TRUE) / 3412)
   
   plot_df <- left_join(merged_df, metadata %>% select(Site_ID, Manufacturer), by = c("site_ID" = "Site_ID")) %>%
     filter(Manufacturer %in% manufacturers) %>%
@@ -558,12 +557,13 @@ heat_cool_COP_all_sites <- function(manufacturers){
 COP_vs_OAT <- function(site){
   df %>% 
     group_by(site_ID, date_local, hour_local) %>%
-    mutate(total_power = HP_system_pwr_kW + auxheat_pwr_kW + fan_pwr_kW) %>%
+    # mutate(total_power = HP_system_pwr_kW + auxheat_pwr_kW + fan_pwr_kW) %>%
     summarize(OA_temp_F = median(OA_temp_F, na.rm=T),
-              total_COP = (sum(cooling_output_btu_h, na.rm = TRUE) + sum(heat_output_btu_h, na.rm = TRUE)) / sum(total_power, na.rm = TRUE) / 3412,
+              total_COP = (sum(cooling_output_btu_h, na.rm = TRUE) + sum(heat_output_btu_h, na.rm = TRUE)) / sum(HP_system_pwr_kW, na.rm = TRUE) / 3412,
               percent_system_Off = sum(operating_mode=="System Off", na.rm=T)/n(),
+              # percent_HP = sum(operating_mode=="Heating-HP Only", na.rm=T)/n(),
+              percent_HP = sum(operating_mode %in% c("Heating-HP Only", "Cooling"), na.rm=T)/n(),
               percent_defrost = sum(operating_mode=="Defrost", na.rm=T)/n(),
-              percent_HP = sum(operating_mode=="Heating-HP Only", na.rm=T)/n(),
               percent_HP_aux = sum(operating_mode=="Heating-Aux/HP", na.rm=T)/n(),
               percent_aux = sum(operating_mode=="Heating-Aux Only", na.rm=T)/n()) %>%
     filter(site_ID==site) %>%
