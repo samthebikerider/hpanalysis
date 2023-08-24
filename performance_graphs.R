@@ -55,23 +55,25 @@ if(Sys.info()[7] == "rose775"){
     # and has very little spring data, so we will not want to include that site 
     # fot the spring graphs.
 
-  ## YZ: Here we can have site_IDs be an input. Uncomment to use.
-site_IDs <- unique(substr(list.files(path = paste0(wd, "/calculated_data")), 1, 6))
+  ## YZ: Here we can have site_IDs be a mannual input. Uncomment each site to use.
+    # But I changed ' ' to 'stop', don't know why if not do " break at 'stop' ", it seems never end
+    # You can still uncomment the line below for running all sites.
+# site_IDs <- unique(substr(list.files(path = paste0(wd, "/calculated_data")), 1, 6))
 
-# site_IDs <- c(
-#   "2563EH",
-#   # "2896BR", # very little data
-#   "6112OH",
-#   # "6950NE",
-#   # "7083LM", # no data
-#   # "8220XE",
-#   # "8726VB",
-#   # "9944LD",
-#   # "4228VB",
-#   # "5539NO",
-#   # "5291QJ",
-#   # "2458CE",
-#   "stop")
+site_IDs <- c(
+  "2563EH",
+  # "2896BR", # very little data
+  "6112OH",
+  # "6950NE",
+  # "7083LM", # no data
+  # "8220XE",
+  # "8726VB",
+  # "9944LD",
+  # "4228VB",
+  # "5539NO",
+  # "5291QJ",
+  # "2458CE",
+  "stop") 
 
 metadata <- read_csv(file = '\\\\rc-smb1\\qprojects\\cchpc\\site-metadata.csv')
 # metadata <- read_csv(file = "Q:/site-metadata.csv")
