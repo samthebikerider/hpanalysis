@@ -138,38 +138,6 @@ daily_supply_temperature_comparison <- function(site, timestart, timeend){
 }
 
 
-# Investigate defrost cycles for every day
-# daily_defrost_plot <- function(site, timestart, timeend){
-# 
-#   df %>% mutate(datetime_UTC = datetime_UTC %>% with_tz(metadata$Timezone[metadata$Site_ID==site]),
-#                 # If defrost mode, set marker to 5 (arbitrary number) to show activity
-#                 Defrost = ifelse(operating_mode=="Defrost", 5, NA)) %>% 
-#     filter(datetime_UTC >= strptime(timestart,"%F", tz=metadata$Timezone[metadata$Site_ID==site]) &
-#            datetime_UTC <= strptime(timeend,"%F", tz=metadata$Timezone[metadata$Site_ID==site])) %>%
-#     ggplot(aes(x=as.POSIXct(datetime_UTC))) +
-#     geom_line(aes(y=ODU_pwr_kW, color = "Outdoor Unit Power"),size=0.3) + 
-#     geom_line(aes(y=fan_pwr_kW, color = "Supply Fan Power"),size=0.3) +
-#     geom_line(aes(y=auxheat_pwr_kW, color = "Auxiliary Power"),size=0.3) + 
-#     geom_point(aes(y=Defrost, color = "Defrost Mode On"),size=2) + 
-#     geom_point(aes(y=defrost_cycle_runtimes/2, color = "Defrost Cycle Length"),size=3,shape=8) +
-#     scale_y_continuous(name = "Power (kW)",
-#                        limits = c(-0.5, 21),
-#                        sec.axis = sec_axis(~.*2, name ="Defrost Cycle Length (mins)")) +
-#     scale_color_manual(name = "", breaks = c("Auxiliary Power","Outdoor Unit Power","Supply Fan Power","Defrost Mode On","Defrost Cycle Length"),
-#                        values = c("#E69F00","black","#CC79A7","#009E73","#56B4E9", "gray", "#F0E442", "#0072B2", "#D55E00")) +
-#     labs(title=paste0("Defrost cycle daily plot for site ", site),x="") +
-#     theme_bw() +
-#     theme(panel.border = element_rect(colour = "black",fill=NA),
-#           panel.grid.major = element_line(size = 0.5),
-#           panel.grid.minor = element_line(size = 0.1),
-#           plot.title = element_text(family = "Times New Roman", size = 11, hjust = 0.5),
-#           axis.title.x = element_text(family = "Times New Roman",  size = 11, hjust = 0.5),
-#           axis.title.y = element_text(family = "Times New Roman", size = 11, hjust = 0.5)) +
-#     guides(color=guide_legend(override.aes = list(shape=c(NA,NA,NA,16,8), 
-#                                                   size=c(1,1,1,3,3),
-#                                                   linetype=c(1,1,1,NA,NA))))
-# }
-
 
 # Power time series comparison chart with OAT and SAT
 daily_operation_plot <- function(site, timestart, timeend){

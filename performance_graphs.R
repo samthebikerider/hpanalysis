@@ -48,6 +48,13 @@ if(Sys.info()[7] == "rose775"){
 ## Load data
 site_IDs <- unique(substr(list.files(path = paste0(wd, "/calculated_data")), 1, 6))
   # Don't see "7083LM" in "calculated_data"
+  ## KK: I think for this script, it would be better to have site_IDs be an input
+    # so that we don't necessarily need to run for all sites if we just want to 
+    # do a subset of them.
+    # We currently don't have spring data for 7083LM because they still need 
+    # to sign some agreement for this site. 2896BR is also dropping out of the study
+    # and has very little spring data, so we will not want to include that site 
+    # fot the spring graphs.
 # site_IDs <- c('2563EH') # for test
 
 metadata <- read_csv(file = '\\\\rc-smb1\\qprojects\\cchpc\\site-metadata.csv')
@@ -83,6 +90,8 @@ for (i in site_IDs){
     map_df(~read_csv(.))
   
   ## For spring performance data, take data only after April 01
+    ## KK: can we make this an input before the loop so it will be easy to
+    # choose which sites and what timeframe at the beginning?
   temp_df <- temp_df %>% filter(datetime_UTC > strptime("2023-04-01", format = "%F", tz=metadata$Timezone[metadata$Site_ID==i]))
   
   site_info <- lookup_table[lookup_table$site_ID == i, ]
@@ -113,6 +122,23 @@ df <- df %>% mutate_at(c("auxheat1_pwr_kW", "room4_temp_F", "room4_RH",
                          "SA_temp_duct3_F", "SA_temp_duct4_F", 
                          "number_aux_legs", "defrost_cycle_runtimes"), as.numeric)
 
+
+# 1a. Operating mode daily summary
+# Winter 2023 Performance
+# ggsave('operating_mode_winter_2023_performance.png',
+#        plot = operating_mode_season(i, "12/15/2022 00:00", "3/30/2023 23:59"),
+#        path = paste0(wd_out,'daily ops/',i),
+#        width=12, height=4, units='in')
+ggsave(paste0(i, '_operating_mode_spring.png'),
+       plot = operating_mode_season(i, "4/01/2023 00:00", "6/14/2023 23:59"),
+       path = paste0(wd_out,'daily_ops/', i),
+       width=12, height=4, units='in')
+# ggsave('operating_mode_summer_2023_performance.png',
+#        plot = operating_mode_season(i, "6/15/2023 00:00", "9/30/2023 23:59"),
+#        path = paste0(wd_out,'daily ops/',i),
+#        width=12, height=4, units='in')
+
+
 # 1b.
   # Write table for operating mode daily summary with temperature and RH
   # Print summary site comparison
@@ -120,7 +146,7 @@ for (i in site_IDs) {
   generate_operating_mode_summary_table(i, wd_out)
   # print_operating_summary_comparison(i, wd_out) (To Do later)
 }
-print("completed table of 1a with temperature and RH")
+
 
 
 # 1c. Operating mode summary by OAT bin
@@ -137,24 +163,29 @@ print("completed supply temperature graphs")
 # Note: For spring performance data, Operating mode summary is made for 0-32F, below 100F
 
 # 1d. Operating mode summary for all sites 0-32F (To Confirm)
-ggsave('Operating_Mode_0-32F_Site_Comparison.png',
-       plot = operation_32F_all_sites(),
-       path = paste0(wd_out,'/Graphs/Site Comparison/'),
-       width=12, height=4, units='in')
-print("completed operating mode summary graphs for all sites 0-32F")
+    # KK: We don't need this one for now, I will comment out.
+# ggsave('Operating_Mode_0-32F_Site_Comparison.png',
+#        plot = operation_32F_all_sites(),
+#        path = paste0(wd_out,'/Graphs/Site Comparison/'),
+#        width=12, height=4, units='in')
+# print("completed operating mode summary graphs for all sites 0-32F")
 
 
 # 1e. Operating mode summary for all sites below 100F (To Confirm)
-ggsave('Operating_Mode_100F_below_Site_Comparison.png',
-       plot = operation_100F_all_sites(),
-       path = paste0(wd_out,'/Graphs/Site Comparison/'),
-       width=12, height=4, units='in')
-print("completed operating mode summary graphs for all sites below 100F")
+  ## KK: Below 100F is too big of a range to be meaningful...
+    # We can revisit later if there is a range we want to look into, but
+    # let's not worry about this one for now.
+# ggsave('Operating_Mode_100F_below_Site_Comparison.png',
+#        plot = operation_100F_all_sites(),
+#        path = paste0(wd_out,'/Graphs/Site Comparison/'),
+#        width=12, height=4, units='in')
+# print("completed operating mode summary graphs for all sites below 100F")
 
 
 ### Outdoor Air Graphs ----
 
 # 5a. Aux staging by OAT bin without defrost
+
 for (i in site_IDs) {
   ggsave(paste0(i, '_aux_use_vs_OAT_Bin.png'),
          plot = aux_staging_no_defrost(i),
@@ -165,6 +196,12 @@ print("completed supply temperature graphs")
 
 
 # 6a. Heating and Cooling capacity (i.e., heating load, cooling load) (Btu/h) by OAT bin
+  # KK: it looks like there are some positive cooling output and negative heat output,
+  # which shouldn't be possible, but I made some updates to the calculations.R 
+  # script which hopefully will fix that.
+  # KK: Also, can we change the colors of the categories in this graph so that
+  # heating is a warmer/red color and cooling is a cooler/blue color, and then
+  # defrost is maybe green or something else?
 for (i in site_IDs) {
   ggsave(paste0(i, '_heat_cool_capacity_vs_OAT_Bin.png'),
        plot = heat_cool_capacity_OAT_Bin(i),
@@ -175,6 +212,8 @@ print("completed supply temperature graphs")
 
 
 # 6b. Table to show the "maximum" heating and cooling capacity in each OAT bin
+    # KK: Note that cooling output will be negative values, so we will need the 5th percentile
+    # instead of the 95th percentile.
 results_list <- list()
 for (i in site_IDs) {
   result <- print_heat_cool_capacity(i)
@@ -187,6 +226,12 @@ print("completed table of the maximum heating and cooling capacity")
 
 
 # 7a. COP vs outdoor air temperature for each site
+  # KK: note we already have a column for total power, now called HP_system_pwr_kW
+  # I know it's confusing because HP doesn't include aux normally, but that's what
+  # they decided to call the column--it includes HP, aux, and fan power.
+  # KK: also note that cooling output is negative, which is what we want, but
+  # COP should always be positive, so for this graph I think we should subtract
+  # the cooling output from the heating output.
 ggsave('COP_vs_OAT_Bin.png',
        plot = heat_cool_COP_all_sites(unique(metadata$Manufacturer)),
        path = paste0(wd,'/Graphs/Site Comparison/'),
@@ -203,6 +248,11 @@ print("completed COP vs outdoor air temperature for each site")
 
 
 # 8. COP vs outdoor air temperature
+  # KK: this graph needs cooling added. I think the way we will want to do it
+  # is for cooling to be included under "Heat Pump", so that will be heat pump heating
+  # and heat pump cooling, then there will be "Defrost", "Heat Pump + Aux" and "Aux Only"
+  # as the other options. So we should have:
+  # percent_HP = sum(operating_mode %in% c("Heating-HP Only", "Cooling"), na.rm=T)/n()
 for (i in site_IDs) {
   ggsave(paste0(i, '_COP_vs_OAT.png'),
          plot = COP_vs_OAT(i),

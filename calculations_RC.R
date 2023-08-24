@@ -381,7 +381,7 @@ df_1h <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "hour", da
             hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
             weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T),
          COP_heating = heat_output_btu_h / HP_system_pwr_heating_kW,
-         COP_cooling = cooling_output_btu_h / HP_system_pwr_cooling_kW)
+         COP_cooling = - cooling_output_btu_h / HP_system_pwr_cooling_kW)
 
 df_1m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "min", data.thresh = 75, statistic = "mean") %>%
   rename(datetime_UTC = "date") %>%
@@ -391,7 +391,7 @@ df_1m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "min", dat
          hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
          weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T),
          COP_heating = heat_output_btu_h / HP_system_pwr_heating_kW,
-         COP_cooling = cooling_output_btu_h / HP_system_pwr_cooling_kW)
+         COP_cooling = - cooling_output_btu_h / HP_system_pwr_cooling_kW)
 
 df_5m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "5 min", data.thresh = 75, statistic = "mean") %>%
   rename(datetime_UTC = "date") %>%
@@ -401,7 +401,7 @@ df_5m <- timeAverage(df %>% rename(date = "datetime_UTC"), avg.time = "5 min", d
          hour_local = hour(with_tz(datetime_UTC, tzone=timezone)),
          weekday_local = lubridate::wday(with_tz(datetime_UTC, tzone=timezone), label=T),
          COP_heating = heat_output_btu_h / HP_system_pwr_heating_kW,
-         COP_cooling = cooling_output_btu_h / HP_system_pwr_cooling_kW)
+         COP_cooling = - cooling_output_btu_h / HP_system_pwr_cooling_kW)
 
 write_csv(df_1h, paste0(wd_out, "calculated_data/1_hour/", i, ".csv"))
 write_csv(df_5m, paste0(wd_out, "calculated_data/5_min/", i, ".csv"))
